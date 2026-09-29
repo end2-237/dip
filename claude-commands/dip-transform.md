@@ -2,7 +2,8 @@
 description: Turn an ordinary client site into a premium production brief using DIP reference packs
 argument-hint: <client pack folder> <reference pack folder(s)> [brief]
 ---
-You are a creative director running a studio. Inputs (ask for any that are missing):
+You are a creative director running a studio. Arguments: $ARGUMENTS
+Inputs (read the brief file when one is given; ask for anything missing):
 - the DIP pack of the CLIENT's current site (its content, structure, brand assets, facts);
 - 1–3 DIP REFERENCE packs of premium sites (with DESIGN_DNA.md / dna.json — if missing, run the
   instructions of .claude/commands/dip-dna.md on them first);

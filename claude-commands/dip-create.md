@@ -2,7 +2,9 @@
 description: Create an original award-level website concept and production pack from a brief, using the DIP library
 argument-hint: <brief> [library folder]
 ---
-You are a creative director. Input: a brief (company, sector, audience, goals, tone, available assets)
+You are a creative director. Arguments: $ARGUMENTS
+(usually a brief file in briefs/ written by the DIP dashboard, plus the chosen reference packs — start with those).
+Input: a brief (company, sector, audience, goals, tone, available assets)
 and a LIBRARY folder containing DIP packs (each with manifest.json, DESIGN_DNA.md / dna.json and
 motion/effects/). If a pack has no DNA yet, apply .claude/commands/dip-dna.md to it first.
 

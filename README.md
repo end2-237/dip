@@ -89,6 +89,21 @@ node cli/dip-capture.js --urls urls.txt          # lot, un site à la fois
 node cli/dip-capture.js https://exemple.com --mode share --headless
 ```
 
+## Tableau de bord (Studio)
+
+Bouton ▦ en haut du panneau DIP → une page plein écran :
+
+- **Dossier de la bibliothèque** : choisis-le une fois (ex. `D:\DIP-Library`) ; chaque scan y est enregistré
+  automatiquement (`packs/<site>/`), avec `LIBRARY.md`, `EFFECTS.md` et les commandes Claude Code.
+- **Vue d’ensemble** : chiffres, prochaines étapes suggérées (ADN à écrire, types d’animations manquants),
+  rythme de la bibliothèque (durées, easings, lerp).
+- **Bibliothèque** : tous les scans, filtres (3D, avec/sans ADN), fiche détaillée (palette, typos, sections,
+  animations, SPEC / ADN / ASSETS lisibles directement), import de packs `.zip` déjà téléchargés.
+- **Animations** : toutes les animations mesurées, classées par type et par déclencheur.
+- **Créer** : projet original, transformation d’un site client, clonage ou ADN. Tu décris le projet,
+  DIP propose les références les plus adaptées, écrit le brief dans `briefs/` et te donne la commande à
+  coller dans Claude Code (abonnement, sans clé API).
+
 ## Créer : bibliothèque, commandes Claude Code, images et 3D
 
 **Bibliothèque** — la mémoire du studio : chaque site scanné devient une référence (ADN, palettes, typos,

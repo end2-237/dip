@@ -2,7 +2,8 @@
 description: Full clone loop from a URL — capture with DIP, write the DNA, build section by section, verify
 argument-hint: <url> [work folder]
 ---
-You are a senior creative developer. Goal: a private study clone of <url> that reaches the fidelity
+You are a senior creative developer. URL and options: $ARGUMENTS
+Goal: a private study clone of that URL that reaches the fidelity
 thresholds measured by DIP, built section by section. Work in the given folder (default: the current one).
 
 0. Locate DIP: the folder that contains cli/dip-capture.js (env DIP_HOME, or ask the user once).

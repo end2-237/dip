@@ -2,7 +2,8 @@
 import { runScan } from './lib/scan.js';
 import { CdpDriver } from './lib/cdp-driver.js';
 import { StandardDriver, bytesToB64 } from './lib/std-driver.js';
-import { buildPackZip } from './lib/pack.js';
+import { buildPackZip, buildPackFiles, packName } from './lib/pack.js';
+import { getRoot, access, savePack } from './lib/workspace.js';
 import { synthesize } from './lib/llm.js';
 import { saveScan, loadScan } from './lib/store.js';
 import { t as tr, stepLabel } from './lib/i18n.js';
@@ -28,6 +29,7 @@ async function saveSettings() {
 function applyI18n() {
   document.documentElement.lang = settings.lang;
   document.querySelectorAll('[data-i18n]').forEach((el) => (el.textContent = t(el.dataset.i18n)));
+  document.querySelectorAll('[data-i18n-title]').forEach((el) => (el.title = t(el.dataset.i18nTitle)));
 }
 function syncForm() {
   $('#set-lang').value = settings.lang;
@@ -104,6 +106,9 @@ async function start(manual) {
     }
   }
   await saveSettings();
+  // ask for the library folder now: the permission prompt needs the click, the save happens at the end
+  const root = await getRoot().catch(() => null);
+  const rootOk = root ? (await access(root, true).catch(() => 'denied')) === 'granted' : false;
   message('');
   $('#review').hidden = true;
   setBusy(true);
@@ -147,7 +152,8 @@ async function start(manual) {
     current = { cap, analysis };
     await saveScan('last', current).catch((e) => console.warn('save failed', e));
     renderReview();
-    if (!$('#message').textContent) message(t('done'), 'ok');
+    if (rootOk) await saveToLibrary(root, true);
+    else if (!$('#message').textContent) message(root ? t('workspaceLocked') : t('done') + ' — ' + t('noWorkspace'), root ? 'error' : 'ok');
   } catch (e) {
     console.error(e);
     message(t('failed') + ' : ' + (e.message || e), 'error');
@@ -287,7 +293,33 @@ async function exportPack(selectedOnly) {
   }
 }
 
+async function saveToLibrary(root, auto) {
+  if (!current) return;
+  readForm();
+  try {
+    root = root || (await getRoot());
+    if (!root) {
+      message(t('noWorkspace'), 'error');
+      return;
+    }
+    if ((await access(root, true)) !== 'granted') {
+      message(t('workspaceLocked'), 'error');
+      return;
+    }
+    const selection = null;
+    const files = await buildPackFiles(current.cap, current.analysis, { mode: settings.exportMode, selection, transformImage: settings.exportMode === 'share' ? shareImage : null });
+    const name = packName(current.cap).replace(/\.zip$/, '') + (settings.exportMode === 'share' ? '_share' : '');
+    const dir = await savePack(root, name, files, (f) => message(`${t('saveLib')}… ${Math.round(f * 100)}%`));
+    message(`${auto ? t('done') + ' · ' : ''}${t('savedLib')} : ${root.name}/${dir}`, 'ok');
+  } catch (e) {
+    console.error(e);
+    message(String(e.message || e), 'error');
+  }
+}
+
 // ------------------------------------------------------------------ wiring
+$('#btn-save-lib').addEventListener('click', () => saveToLibrary(null, false));
+$('#btn-dashboard').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') }));
 $('#btn-dissect').addEventListener('click', () => start(false));
 $('#btn-record').addEventListener('click', () => start(true));
 $('#btn-stop').addEventListener('click', () => stopResolver && stopResolver());

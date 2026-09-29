@@ -1,11 +1,14 @@
 ---
-description: Write the design DNA (art direction + production rules) of this DIP pack
+description: Write the design DNA (art direction + production rules) of one or more DIP packs
+argument-hint: [pack folder ...]
 ---
-You are an art director and senior creative developer. The folder that contains this command's pack
-(the directory holding SPEC.md and manifest.json — if you are not inside it, find it) is a DIP
-Reproduction Pack: MEASUREMENTS of a premium website captured in a real browser.
+You are an art director and senior creative developer. A DIP Reproduction Pack holds MEASUREMENTS of a
+premium website captured in a real browser (a folder with SPEC.md and manifest.json).
+Packs to process: $ARGUMENTS
+If no folder is given, use the pack that contains this command (or the current folder). When several
+folders are given, process them one after the other, each with its own DESIGN_DNA.md and dna.json.
 
-Goal: write DESIGN_DNA.md and dna.json at the pack root. They capture the essence of the site so a
+Goal: write DESIGN_DNA.md and dna.json at each pack root. They capture the essence of the site so a
 studio can produce NEW, ORIGINAL sites of the same standard — not copy this one.
 
 Read, in this order: SPEC.md, design/tokens.json, design/typography.md, design/grid.md,

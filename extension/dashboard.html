@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DIP — Studio</title>
+<link rel="icon" href="icons/icon32.png">
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+<aside class="side">
+  <div class="brand">
+    <span class="logo">DIP</span>
+    <div>
+      <div class="name">Studio</div>
+      <div class="sub">Design Intelligence</div>
+    </div>
+  </div>
+  <nav>
+    <a href="#overview" data-page="overview"><svg viewBox="0 0 16 16"><path d="M2.5 8.5 8 3l5.5 5.5M4 7v6h8V7"/></svg><span>Vue d’ensemble</span></a>
+    <a href="#library" data-page="library"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/></svg><span>Bibliothèque</span><em id="nav-count"></em></a>
+    <a href="#motion" data-page="motion"><svg viewBox="0 0 16 16"><path d="M2 11c2.5 0 3-6 6-6s3.5 6 6 6"/></svg><span>Animations</span></a>
+    <a href="#create" data-page="create"><svg viewBox="0 0 16 16"><path d="M8 2.5v11M2.5 8h11"/></svg><span>Créer</span></a>
+    <a href="#settings" data-page="settings"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M3.6 12.4l1.3-1.3M11.1 4.9l1.3-1.3"/></svg><span>Réglages</span></a>
+  </nav>
+  <div class="ws" id="ws">
+    <div class="label">Dossier</div>
+    <button class="ws-btn" id="ws-btn" title="Choisir le dossier de la bibliothèque"><span class="dot" id="ws-dot"></span><span id="ws-name">Aucun</span></button>
+  </div>
+</aside>
+
+<main>
+  <header class="bar">
+    <h1 id="page-title">Vue d’ensemble</h1>
+    <div class="bar-right">
+      <input type="search" id="search" placeholder="Rechercher…" hidden>
+      <button id="btn-import" class="ghost" title="Importer des packs .zip déjà téléchargés"><svg viewBox="0 0 16 16"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>Importer</button>
+      <button id="btn-scan" class="primary"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>Scanner un site</button>
+      <input type="file" id="file-import" accept=".zip" multiple hidden>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <!-- empty state: no folder -->
+  <section id="page-empty" class="page empty" hidden>
+    <div class="empty-box">
+      <div class="label">Première étape</div>
+      <h2>Choisis le dossier de ta bibliothèque</h2>
+      <p class="muted">Chaque scan y sera enregistré automatiquement, avec son analyse, ses références et les commandes Claude Code. Conseil : un dossier dédié sur le disque qui a de la place, par exemple <span class="mono">D:\DIP-Library</span>.</p>
+      <div class="row gap">
+        <button class="primary" id="btn-pick">Choisir le dossier</button>
+        <button class="ghost" id="btn-pick-help">Comment ça marche ?</button>
+      </div>
+      <ol class="steps muted" id="pick-help" hidden>
+        <li>Scanne un site avec le panneau DIP : le pack est rangé dans <span class="mono">packs/</span>.</li>
+        <li>Écris son ADN avec Claude Code (<span class="mono">/dip-dna</span>), sans clé API.</li>
+        <li>Dans « Créer », décris ton projet : DIP choisit les références et te donne la commande à coller dans Claude Code.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="page-overview" class="page" hidden>
+    <div class="stats" id="stats"></div>
+    <div class="cols">
+      <div class="panel">
+        <div class="panel-h"><h3>Prochaines étapes</h3></div>
+        <div id="suggestions" class="list"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h3>Rythme de la bibliothèque</h3></div>
+        <div id="tempo"></div>
+      </div>
+    </div>
+    <div class="panel-h spaced"><h3>Derniers scans</h3><a href="#library" class="link">Tout voir</a></div>
+    <div id="recent" class="grid"></div>
+  </section>
+
+  <section id="page-library" class="page" hidden>
+    <div class="filters" id="lib-filters">
+      <button class="seg on" data-f="all">Tous</button>
+      <button class="seg" data-f="3d">3D</button>
+      <button class="seg" data-f="nodna">Sans ADN</button>
+      <button class="seg" data-f="dna">Avec ADN</button>
+    </div>
+    <div id="lib-grid" class="grid"></div>
+  </section>
+
+  <section id="page-motion" class="page" hidden>
+    <div class="filters" id="mo-filters"></div>
+    <div id="mo-list"></div>
+  </section>
+
+  <section id="page-create" class="page" hidden>
+    <div class="filters" id="cr-modes">
+      <button class="seg on" data-m="create">Projet original</button>
+      <button class="seg" data-m="transform">Transformer un site</button>
+      <button class="seg" data-m="clone">Cloner un site</button>
+      <button class="seg" data-m="dna">Écrire les ADN</button>
+    </div>
+    <div class="create">
+      <form class="panel form" id="cr-form" autocomplete="off">
+        <div data-for="create transform">
+          <div class="grid2">
+            <label>Entreprise / projet<input type="text" name="company" placeholder="Ex. Maison Lumen"></label>
+            <label>Secteur<input type="text" name="sector" placeholder="Ex. hôtellerie de luxe"></label>
+            <label>Public<input type="text" name="audience" placeholder="Ex. voyageurs 30–55 ans, CSP+"></label>
+            <label>Objectif<input type="text" name="goal" placeholder="Ex. réservations directes"></label>
+            <label>Ton<input type="text" name="tone" placeholder="Ex. calme, sensoriel, confiant"></label>
+            <label>Langue du site<select name="lang"><option>Français</option><option>English</option><option>Français + English</option></select></label>
+          </div>
+          <label>Idée, contenus disponibles, contraintes<textarea name="notes" rows="3" placeholder="Ex. 5 pages, photos du client disponibles, budget 3D léger, livraison en 3 semaines…"></textarea></label>
+          <label class="row check"><input type="checkbox" name="want3d"> Expérience 3D / immersive souhaitée</label>
+        </div>
+        <div data-for="transform">
+          <label>Pack du site actuel du client<select name="client" id="cr-client"></select></label>
+          <p class="hint">Scanne d’abord le site actuel du client : DIP y récupère ses contenus, sa structure et ses couleurs.</p>
+        </div>
+        <div data-for="clone">
+          <label>Adresse du site à cloner<input type="url" name="url" placeholder="https://…"></label>
+          <p class="hint">Claude Code lance lui-même le scan, écrit l’ADN, construit section par section et vérifie (3 essais max par section).</p>
+        </div>
+        <div data-for="create transform">
+          <div class="panel-h spaced"><h3>Références suggérées</h3><span class="muted small" id="cr-refcount"></span></div>
+          <div id="cr-refs" class="refs"></div>
+        </div>
+        <div data-for="dna">
+          <div class="panel-h"><h3>Packs sans ADN</h3></div>
+          <div id="cr-nodna" class="refs"></div>
+        </div>
+        <div class="row gap end">
+          <button type="submit" class="primary" id="cr-go">Préparer la commande</button>
+        </div>
+      </form>
+      <aside class="panel out" id="cr-out">
+        <div class="label">Commande Claude Code</div>
+        <pre id="cr-cmd" class="cmd">Remplis le formulaire puis « Préparer la commande ».</pre>
+        <button id="cr-copy" class="ghost wide" disabled><svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.8c0-.7.6-1.3 1.3-1.3H10"/></svg>Copier</button>
+        <ol class="steps small" id="cr-steps">
+          <li>Ouvre l’app Claude → <b>Code</b>, dossier <span class="mono" id="cr-folder">—</span>.</li>
+          <li>Colle la commande. Claude utilise ton abonnement, sans clé API.</li>
+          <li>Valide le concept proposé ; le pack de production est écrit dans <span class="mono">production/</span>.</li>
+        </ol>
+        <p class="hint" id="cr-cost"></p>
+      </aside>
+    </div>
+  </section>
+
+  <section id="page-settings" class="page" hidden>
+    <div class="panel narrow">
+      <div class="set-row"><div><div class="set-t">Dossier de la bibliothèque</div><div class="muted small" id="set-folder">—</div></div><button id="set-pick">Changer</button></div>
+      <div class="set-row"><div><div class="set-t">Reconstruire l’index</div><div class="muted small">LIBRARY.md, EFFECTS.md, index.json et les commandes Claude Code.</div></div><button id="set-reindex">Reconstruire</button></div>
+      <div class="set-row"><div><div class="set-t">Images et objets 3D</div><div class="muted small">Génération à l’unité avec <span class="mono">dip-assets</span> (fal.ai) : ≈ 0,03 $ l’image, 0,05–1,50 $ l’objet 3D. La clé se met dans une variable d’environnement, jamais ici.</div></div></div>
+      <div class="set-row"><div><div class="set-t">Structure du dossier</div><div class="muted small mono">packs/ · briefs/ · production/ · LIBRARY.md · EFFECTS.md · .claude/commands/</div></div></div>
+    </div>
+  </section>
+</main>
+
+<div id="drawer" class="drawer" hidden>
+  <div class="drawer-h"><div id="dr-title"></div><button class="icon" id="dr-close" aria-label="Fermer"><svg viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg></button></div>
+  <div id="dr-body" class="drawer-b"></div>
+</div>
+<div id="scrim" class="scrim" hidden></div>
+
+<dialog id="dlg-scan" class="dlg">
+  <form method="dialog">
+    <div class="label">Scanner un site</div>
+    <h2>Quelle page veux-tu disséquer ?</h2>
+    <input type="url" id="scan-url" placeholder="https://…" required>
+    <p class="hint">La page s’ouvre avec le panneau DIP : clique sur « Disséquer ce site ». Le pack sera rangé dans ta bibliothèque.</p>
+    <div class="row gap end"><button value="cancel" class="ghost">Annuler</button><button value="ok" class="primary" id="scan-go">Ouvrir et scanner</button></div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+<script type="module" src="dashboard.js"></script>
+</body>
+</html>

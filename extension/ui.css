@@ -1,0 +1,69 @@
+/* DIP design system — shared by the side panel and the dashboard. Quiet, precise, small. */
+:root {
+  --bg: #0a0a0b;
+  --surface: #111113;
+  --raised: #17171a;
+  --hover: #1c1c20;
+  --line: rgba(255, 255, 255, .07);
+  --line-2: rgba(255, 255, 255, .12);
+  --fg: #ecebe7;
+  --fg-2: #b9b8b3;
+  --muted: #7d7c84;
+  --accent: #ff6a3d;
+  --accent-soft: rgba(255, 106, 61, .12);
+  --violet: #9a8cff;
+  --violet-soft: rgba(154, 140, 255, .12);
+  --ok: #4fd1a1;
+  --ok-soft: rgba(79, 209, 161, .12);
+  --warn: #f2b35b;
+  --warn-soft: rgba(242, 179, 91, .12);
+  --r-sm: 6px;
+  --r: 9px;
+  --r-lg: 12px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-font-smoothing: antialiased; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 12px/1.5 var(--font); letter-spacing: -.003em; }
+::selection { background: var(--accent-soft); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .08); border-radius: 8px; border: 2px solid var(--bg); }
+a { color: inherit; }
+h1, h2, h3 { font-weight: 560; letter-spacing: -.012em; margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 11px; }
+.mono { font-family: var(--mono); font-size: 10.5px; }
+.label { font-size: 10px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 520; }
+
+/* controls */
+button { font: inherit; font-size: 11.5px; font-weight: 520; height: 28px; padding: 0 11px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: transparent; color: var(--fg); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background .15s var(--ease), border-color .15s var(--ease), opacity .15s; white-space: nowrap; }
+button:hover { background: var(--hover); }
+button:disabled { opacity: .4; cursor: not-allowed; }
+button.primary { background: var(--fg); color: #0b0b0c; border-color: var(--fg); }
+button.primary:hover { background: #fff; }
+button.accent { background: var(--accent); border-color: var(--accent); color: #140905; }
+button.ghost { border-color: transparent; color: var(--fg-2); }
+button.ghost:hover { color: var(--fg); background: var(--hover); }
+button.icon { width: 28px; padding: 0; border-color: transparent; color: var(--fg-2); }
+button.icon:hover { color: var(--fg); }
+select, input[type=text], input[type=number], input[type=password], input[type=url], input[type=search], textarea {
+  font: inherit; font-size: 12px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 9px; width: 100%; outline: none; transition: border-color .15s;
+}
+textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+select:focus, input:focus, textarea:focus { border-color: var(--line-2); background: var(--raised); }
+input[type=checkbox] { accent-color: var(--accent); width: 13px; height: 13px; margin: 0; }
+label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 10.5px; }
+
+/* chips / badges */
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 10.5px; color: var(--fg-2); background: transparent; }
+.badge { display: inline-flex; align-items: center; height: 17px; padding: 0 6px; border-radius: 4px; font-size: 10px; background: rgba(255, 255, 255, .05); color: var(--fg-2); font-weight: 500; }
+.badge.ok { background: var(--ok-soft); color: var(--ok); }
+.badge.violet { background: var(--violet-soft); color: var(--violet); }
+.badge.warn { background: var(--warn-soft); color: var(--warn); }
+.badge.accent { background: var(--accent-soft); color: var(--accent); }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: inline-block; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1); display: inline-block; }

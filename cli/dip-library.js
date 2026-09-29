@@ -12,8 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from './lib/args.js';
 import { unzip } from './lib/unzip.js';
-import { COMMANDS } from '../extension/lib/commands.js';
-import { EFFECT_TYPES } from '../extension/lib/taxonomy.js';
+import { writeIndex } from '../extension/lib/library.js';
 
 const readJson = (p) => {
   try {
@@ -71,90 +70,21 @@ function addPack(lib, src) {
   return dest;
 }
 
-function summarize(dir) {
-  const m = readJson(path.join(dir, 'manifest.json'));
-  if (!m) return null;
-  const tokens = readJson(path.join(dir, 'design/tokens.json')) || {};
-  const dna = readJson(path.join(dir, 'dna.json'));
-  const scroll = readJson(path.join(dir, 'motion/scroll-system.json')) || {};
-  const palette = Object.values(tokens.color || {})
-    .filter((c) => c.$extensions && c.$extensions.dip && c.$extensions.dip.share != null)
-    .map((c) => ({ hex: c.$value, share: c.$extensions.dip.share, role: c.$extensions.dip.role || null }))
-    .slice(0, 8);
-  const fonts = [...new Set(Object.values(tokens.typography || {}).map((t) => t.$value && t.$value.fontFamily && t.$value.fontFamily.split(',')[0].replace(/["']/g, '').trim()).filter(Boolean))];
-  const effects = [];
-  const fxDir = path.join(dir, 'motion/effects');
-  for (const f of fs.existsSync(fxDir) ? fs.readdirSync(fxDir).filter((f) => f.endsWith('.json')).sort() : []) {
-    const e = readJson(path.join(fxDir, f));
-    if (!e) continue;
-    const an = e.animation || {};
-    effects.push({ id: e.id, type: e.effect_type, trigger: e.trigger, technique: e.technique, source: e.source, section: e.section, duration: an.duration ?? null, ease: an.ease || null, stagger: an.stagger ?? null, confidence: e.confidence });
-  }
-  const sections = readJson(path.join(dir, 'structure/sections.json')) || [];
+// node:fs adapter for the shared library code
+function nodeFs(lib) {
+  const abs = (p) => path.join(lib, ...p.split('/'));
   return {
-    name: path.basename(dir),
-    path: path.relative(path.dirname(path.dirname(dir)), dir).split(path.sep).join('/'),
-    url: m.url,
-    domain: domain(m.url),
-    title: m.title,
-    date: m.date,
-    tier: m.tier,
-    complexity: m.complexity,
-    stack: (m.detectedStack || []).filter((s) => s.confidence >= 0.6).map((s) => s.name),
-    threeD: fs.existsSync(path.join(dir, 'webgl/three-scene.md')) || (m.webgl || []).length > 0,
-    scroll: { type: scroll.type || null, lerp: scroll.measuredLerp || null },
-    palette,
-    fonts,
-    sections: sections.map((s) => ({ id: s.id, heading: s.heading || null, height: s.height || null })),
-    effects,
-    dna: dna ? { keywords: dna.keywords || [], register: dna.register || null, sectors: dna.sectors || [], signatureEffects: dna.signatureEffects || [], tempo: dna.tempo || null } : null,
+    list: async (dir) => (fs.existsSync(abs(dir)) ? fs.readdirSync(abs(dir), { withFileTypes: true }).map((d) => ({ name: d.name, kind: d.isDirectory() ? 'directory' : 'file' })) : []),
+    readText: async (p) => (fs.existsSync(abs(p)) ? fs.readFileSync(abs(p), 'utf8') : null),
+    writeText: async (p, text) => {
+      fs.mkdirSync(path.dirname(abs(p)), { recursive: true });
+      fs.writeFileSync(abs(p), text);
+    },
   };
 }
 
-function writeIndex(lib) {
-  const packsDir = path.join(lib, 'packs');
-  const dirs = fs.existsSync(packsDir) ? fs.readdirSync(packsDir).map((d) => path.join(packsDir, d)).filter((d) => fs.existsSync(path.join(d, 'manifest.json'))) : [];
-  const packs = dirs.map(summarize).filter(Boolean).sort((a, b) => a.domain.localeCompare(b.domain) || String(b.date).localeCompare(String(a.date)));
-  fs.writeFileSync(path.join(lib, 'index.json'), JSON.stringify({ generator: 'dip-library', updated: new Date().toISOString(), packs }, null, 2));
-
-  const o = ['# DIP library', '', `${packs.length} site(s). Open Claude Code in this folder and use \`/dip-create <brief>\`, \`/dip-transform <client pack> <reference packs>\` or \`/dip-dna\` (inside a pack).`, ''];
-  const noDna = packs.filter((p) => !p.dna);
-  if (noDna.length) o.push(`⚠ ${noDna.length} pack(s) without DESIGN_DNA yet: ${noDna.map((p) => '`' + p.name + '`').join(', ')} — run /dip-dna in each (it needs no API key).`, '');
-  o.push('| Site | Tier | 3D | Scroll | Palette | Fonts | Effects | DNA keywords |');
-  o.push('|---|---|---|---|---|---|---|---|');
-  for (const p of packs)
-    o.push(`| [${p.domain}](packs/${p.name}/SPEC.md) | ${p.tier} | ${p.threeD ? '✓' : ''} | ${p.scroll.type || ''}${p.scroll.lerp ? ' ' + p.scroll.lerp : ''} | ${p.palette.slice(0, 5).map((c) => c.hex).join(' ')} | ${p.fonts.slice(0, 3).join(', ')} | ${p.effects.length} | ${p.dna ? p.dna.keywords.slice(0, 6).join(', ') : '—'} |`);
-  o.push('');
-  fs.writeFileSync(path.join(lib, 'LIBRARY.md'), o.join('\n'));
-
-  // animation guide by need: every measured effect grouped by type, with its measured values
-  const byType = new Map();
-  for (const p of packs) for (const e of p.effects) {
-    if (!byType.has(e.type)) byType.set(e.type, []);
-    byType.get(e.type).push({ ...e, pack: p });
-  }
-  const g = ['# Effects index — measured animations by need', '', 'Each line links to a measured effect card. Reuse the measured values (duration, easing, stagger, lerp); never the original code or assets.', ''];
-  for (const [type, list] of [...byType.entries()].sort((a, b) => b[1].length - a[1].length)) {
-    g.push(`## ${type} (${list.length})`);
-    g.push('');
-    if (EFFECT_TYPES[type]) g.push(`_${EFFECT_TYPES[type]}_`, '');
-    for (const e of list.slice(0, 40))
-      g.push(`- [${e.pack.domain} · ${e.id}](packs/${e.pack.name}/motion/effects/${e.id}.md) — ${e.trigger}${e.duration != null ? `, ${e.duration}s` : ''}${e.ease ? `, ${e.ease}` : ''}${e.stagger != null ? `, stagger ${e.stagger}` : ''} (${e.technique || '?'}, conf ${e.confidence})`);
-    g.push('');
-  }
-  fs.writeFileSync(path.join(lib, 'EFFECTS.md'), g.join('\n'));
-
-  // Claude Code commands at the library root
-  for (const [name, body] of Object.entries(COMMANDS)) {
-    const p = path.join(lib, '.claude/commands', name);
-    fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(p, body);
-  }
-  return packs;
-}
-
-function search(lib, a) {
-  const idx = readJson(path.join(lib, 'index.json')) || { packs: writeIndex(lib) };
+async function search(lib, a) {
+  const idx = readJson(path.join(lib, 'index.json')) || { packs: await writeIndex(nodeFs(lib)) };
   const words = a._.slice(1).map((w) => w.toLowerCase());
   const rows = [];
   for (const p of idx.packs) {
@@ -163,13 +93,13 @@ function search(lib, a) {
     if (!packHit) continue;
     const fx = p.effects.filter((e) => (!a.effect || e.type === a.effect) && (!a.trigger || e.trigger === a.trigger));
     if ((a.effect || a.trigger) && !fx.length) continue;
-    rows.push(`${p.domain} (tier ${p.tier}${p.threeD ? ', 3D' : ''}) — packs/${p.name}`);
+    rows.push(`${p.domain} (tier ${p.tier}${p.threeD ? ', 3D' : ''}) — ${p.path}`);
     for (const e of fx.slice(0, 12)) rows.push(`   ${e.id}: ${e.type} · ${e.trigger}${e.duration != null ? ` · ${e.duration}s` : ''}${e.ease ? ` · ${e.ease}` : ''}`);
   }
   console.log(rows.length ? rows.join('\n') : 'no match');
 }
 
-function main() {
+async function main() {
   const a = parseArgs(process.argv.slice(2));
   const lib = libDir(a);
   const cmd = a._[0];
@@ -177,22 +107,20 @@ function main() {
     if (a._.length < 2) throw new Error('usage: dip-library add <pack folder|zip> [...]');
     fs.mkdirSync(lib, { recursive: true });
     for (const src of a._.slice(1)) console.error(`✓ ${path.relative(process.cwd(), addPack(lib, src)) || '.'}`);
-    const packs = writeIndex(lib);
+    const packs = await writeIndex(nodeFs(lib));
     console.error(`library: ${packs.length} site(s) → ${path.join(lib, 'LIBRARY.md')}`);
   } else if (cmd === 'index') {
     fs.mkdirSync(lib, { recursive: true });
-    const packs = writeIndex(lib);
+    const packs = await writeIndex(nodeFs(lib));
     console.error(`library: ${packs.length} site(s) → ${path.join(lib, 'LIBRARY.md')}`);
-  } else if (cmd === 'search') search(lib, a);
+  } else if (cmd === 'search') await search(lib, a);
   else {
     console.error(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 10).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
     process.exit(cmd ? 2 : 0);
   }
 }
 
-try {
-  main();
-} catch (e) {
+main().catch((e) => {
   console.error('✗ ' + e.message);
   process.exit(1);
-}
+});

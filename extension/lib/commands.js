@@ -2,13 +2,16 @@
 // They run inside Claude Code, i.e. on the user's Claude subscription — no API key needed.
 
 export const DIP_DNA = `---
-description: Write the design DNA (art direction + production rules) of this DIP pack
+description: Write the design DNA (art direction + production rules) of one or more DIP packs
+argument-hint: [pack folder ...]
 ---
-You are an art director and senior creative developer. The folder that contains this command's pack
-(the directory holding SPEC.md and manifest.json — if you are not inside it, find it) is a DIP
-Reproduction Pack: MEASUREMENTS of a premium website captured in a real browser.
+You are an art director and senior creative developer. A DIP Reproduction Pack holds MEASUREMENTS of a
+premium website captured in a real browser (a folder with SPEC.md and manifest.json).
+Packs to process: $ARGUMENTS
+If no folder is given, use the pack that contains this command (or the current folder). When several
+folders are given, process them one after the other, each with its own DESIGN_DNA.md and dna.json.
 
-Goal: write DESIGN_DNA.md and dna.json at the pack root. They capture the essence of the site so a
+Goal: write DESIGN_DNA.md and dna.json at each pack root. They capture the essence of the site so a
 studio can produce NEW, ORIGINAL sites of the same standard — not copy this one.
 
 Read, in this order: SPEC.md, design/tokens.json, design/typography.md, design/grid.md,
@@ -49,7 +52,8 @@ export const DIP_TRANSFORM = `---
 description: Turn an ordinary client site into a premium production brief using DIP reference packs
 argument-hint: <client pack folder> <reference pack folder(s)> [brief]
 ---
-You are a creative director running a studio. Inputs (ask for any that are missing):
+You are a creative director running a studio. Arguments: $ARGUMENTS
+Inputs (read the brief file when one is given; ask for anything missing):
 - the DIP pack of the CLIENT's current site (its content, structure, brand assets, facts);
 - 1–3 DIP REFERENCE packs of premium sites (with DESIGN_DNA.md / dna.json — if missing, run the
   instructions of .claude/commands/dip-dna.md on them first);
@@ -82,7 +86,9 @@ export const DIP_CREATE = `---
 description: Create an original award-level website concept and production pack from a brief, using the DIP library
 argument-hint: <brief> [library folder]
 ---
-You are a creative director. Input: a brief (company, sector, audience, goals, tone, available assets)
+You are a creative director. Arguments: $ARGUMENTS
+(usually a brief file in briefs/ written by the DIP dashboard, plus the chosen reference packs — start with those).
+Input: a brief (company, sector, audience, goals, tone, available assets)
 and a LIBRARY folder containing DIP packs (each with manifest.json, DESIGN_DNA.md / dna.json and
 motion/effects/). If a pack has no DNA yet, apply .claude/commands/dip-dna.md to it first.
 
@@ -117,7 +123,8 @@ export const DIP_CLONE = `---
 description: Full clone loop from a URL — capture with DIP, write the DNA, build section by section, verify
 argument-hint: <url> [work folder]
 ---
-You are a senior creative developer. Goal: a private study clone of <url> that reaches the fidelity
+You are a senior creative developer. URL and options: $ARGUMENTS
+Goal: a private study clone of that URL that reaches the fidelity
 thresholds measured by DIP, built section by section. Work in the given folder (default: the current one).
 
 0. Locate DIP: the folder that contains cli/dip-capture.js (env DIP_HOME, or ask the user once).
