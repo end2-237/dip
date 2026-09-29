@@ -103,16 +103,18 @@ function recipe(e, analysis) {
   const sel = (e.targets || []).map((t) => t.selector).filter(Boolean);
   const target = e.split ? e.split.container : sel[0] || '[target]';
   const lines = [];
+  let stepN = 0;
+  const n = () => ++stepN;
   const stInfo = e.scrollTrigger;
   const stLiteral = stInfo
     ? `scrollTrigger: { trigger: '${stInfo.trigger || target}', start: '${stInfo.start}', end: '${stInfo.end}'${stInfo.scrub ? `, scrub: ${JSON.stringify(stInfo.scrub)}` : ''}${stInfo.pin ? `, pin: ${stInfo.pin === stInfo.trigger ? 'true' : `'${stInfo.pin}'`}` : ''}${stInfo.toggleActions ? `, toggleActions: '${stInfo.toggleActions}'` : ''} }`
     : null;
   if (e.split) {
-    lines.push(`1. Split \`${e.split.container}\` into **${e.split.type}**${e.split.nested ? ` (then ${e.split.nested})` : ''} — ${e.split.count} units${e.split.mask ? ', each wrapped in an `overflow: hidden` mask element' : ''}. Keep the full text in \`aria-label\` on the container and \`aria-hidden="true"\` on the pieces.`);
+    lines.push(`${n()}. Split \`${e.split.container}\` into **${e.split.type}**${e.split.nested ? ` (then ${e.split.nested})` : ''} — ${e.split.count} units${e.split.mask ? ', each wrapped in an `overflow: hidden` mask element' : ''}. Keep the full text in \`aria-label\` on the container and \`aria-hidden="true"\` on the pieces.`);
   }
   if (e.source === 'read:gsap') {
     if (a.steps) {
-      lines.push(`${lines.length + 1}. Build a GSAP timeline${a.timeline && a.timeline.repeat ? ` (repeat: ${a.timeline.repeat}${a.timeline.yoyo ? ', yoyo' : ''})` : ''}${stLiteral ? ' driven by ScrollTrigger' : ''} with these steps (exact values):`);
+      lines.push(`${n()}. Build a GSAP timeline${a.timeline && a.timeline.repeat ? ` (repeat: ${a.timeline.repeat}${a.timeline.yoyo ? ', yoyo' : ''})` : ''}${stLiteral ? ' driven by ScrollTrigger' : ''} with these steps (exact values):`);
       lines.push('');
       lines.push('```js');
       lines.push(`const tl = gsap.timeline(${stLiteral ? `{ ${stLiteral} }` : a.timeline && (a.timeline.repeat || a.timeline.delay) ? gsapVarsLiteral({ repeat: a.timeline.repeat || undefined, yoyo: a.timeline.yoyo || undefined, delay: a.timeline.delay || undefined }) : ''});`);
@@ -139,7 +141,7 @@ function recipe(e, analysis) {
       if (a.method === 'fromTo') call = `gsap.fromTo(${t}, ${gsapVarsLiteral(a.from)}, ${gsapVarsLiteral(vars).replace(/ }$/, stLiteral ? `, ${stLiteral} }` : ' }')});`;
       else if (a.method === 'from') call = `gsap.from(${t}, ${gsapVarsLiteral({ ...(typeof a.from === 'object' ? a.from : {}), duration: a.duration, ease: a.ease, ...(vars.delay ? { delay: vars.delay } : {}), ...(vars.stagger != null ? { stagger: vars.stagger } : {}) }).replace(/ }$/, stLiteral ? `, ${stLiteral} }` : ' }')});`;
       else call = `gsap.to(${t}, ${gsapVarsLiteral(vars).replace(/ }$/, stLiteral ? `, ${stLiteral} }` : ' }')});`;
-      lines.push(`${lines.length + 1}. Animate with GSAP (values read from the site's GSAP calls${a.instances > 1 ? `; the site calls this ${a.instances}× — once per element` : ''}):`);
+      lines.push(`${n()}. Animate with GSAP (values read from the site's GSAP calls${a.instances > 1 ? `; the site calls this ${a.instances}× — once per element` : ''}):`);
       lines.push('');
       lines.push('```js');
       if (e.split) lines.push(`const split = new SplitText('${e.split.container}', { type: '${e.split.type}'${e.split.mask ? `, mask: '${e.split.type}'` : ''} }); // or split-type`);
@@ -148,7 +150,7 @@ function recipe(e, analysis) {
     }
   } else if (e.source === 'read:waapi') {
     if (e.technique === 'css-keyframes' || e.technique === 'css-scroll-timeline') {
-      lines.push(`${lines.length + 1}. CSS keyframes \`${a.name || 'anim'}\` (exact):`);
+      lines.push(`${n()}. CSS keyframes \`${a.name || 'anim'}\` (exact):`);
       lines.push('');
       lines.push('```css');
       lines.push(`@keyframes ${a.name || 'anim'} {`);
@@ -162,27 +164,27 @@ function recipe(e, analysis) {
       if (e.technique === 'css-scroll-timeline') lines.push(`/* timeline: ${a.timeline} ${a.rangeStart ? 'range ' + JSON.stringify(a.rangeStart) + ' → ' + JSON.stringify(a.rangeEnd) : ''} */`);
       lines.push('```');
     } else if (e.technique === 'css-transition') {
-      lines.push(`${lines.length + 1}. CSS transition on \`${a.name}\`: \`transition: ${a.name} ${a.duration}s ${a.ease} ${a.delay || 0}s\`. Keyframes observed: ${fmt(a.keyframes)}.`);
+      lines.push(`${n()}. CSS transition on \`${a.name}\`: \`transition: ${a.name} ${a.duration}s ${a.ease} ${a.delay || 0}s\`. Keyframes observed: ${fmt(a.keyframes)}.`);
     } else {
-      lines.push(`${lines.length + 1}. \`element.animate(keyframes, { duration: ${typeof a.duration === 'number' ? Math.round(a.duration * 1000) : a.duration}, easing: '${a.ease}', delay: ${Math.round((a.delay || 0) * 1000)}, iterations: ${a.iterations}, fill: '${a.fill}' })\` with keyframes ${fmt(a.keyframes)}${a.stagger ? `, staggered by ${a.stagger}s` : ''}.`);
+      lines.push(`${n()}. \`element.animate(keyframes, { duration: ${typeof a.duration === 'number' ? Math.round(a.duration * 1000) : a.duration}, easing: '${a.ease}', delay: ${Math.round((a.delay || 0) * 1000)}, iterations: ${a.iterations}, fill: '${a.fill}' })\` with keyframes ${fmt(a.keyframes)}${a.stagger ? `, staggered by ${a.stagger}s` : ''}.`);
     }
   } else if (e.source === 'measured:recorder') {
     const v = a.values || {};
     if (e.trigger === 'scroll-scrub') {
-      lines.push(`${lines.length + 1}. Scrub the animation with the scroll between **${a.scroll && a.scroll.startPx}px** and **${a.scroll && a.scroll.endPx}px** of page scroll (at 1440px). Measured: ${fmt(v)}; ${a.scroll && a.scroll.pxPerScrollPx} px of motion per px of scroll; progress curve ≈ \`${a.ease}\` (RMS ${a.fit_rms}).`);
+      lines.push(`${n()}. Scrub the animation with the scroll between **${a.scroll && a.scroll.startPx}px** and **${a.scroll && a.scroll.endPx}px** of page scroll (at 1440px). Measured: ${fmt(v)}; ${a.scroll && a.scroll.pxPerScrollPx} px of motion per px of scroll; progress curve ≈ \`${a.ease}\` (RMS ${a.fit_rms}).`);
       lines.push('');
       lines.push('```js');
       lines.push(`gsap.fromTo('${target}', { ${Object.entries(v).filter(([, x]) => x.atStart != null).map(([k, x]) => `${k}: ${x.atStart}`).join(', ')} }, { ${Object.entries(v).filter(([, x]) => x.atEnd != null).map(([k, x]) => `${k}: ${x.atEnd}`).join(', ')}, ease: '${a.ease}',`);
       lines.push(`  scrollTrigger: { trigger: '${target}', start: ${a.scroll && a.scroll.startPx}, end: ${a.scroll && a.scroll.endPx}, scrub: true } }); // absolute px: convert to trigger-relative positions`);
       lines.push('```');
     } else if (e.trigger === 'time-loop' && a.loop) {
-      lines.push(`${lines.length + 1}. Infinite linear loop on \`${a.loop.channel}\` at **${a.loop.speedPxPerS} px/s** (range ${a.loop.min} → ${a.loop.max}). Duplicate the content so the loop is seamless.`);
+      lines.push(`${n()}. Infinite linear loop on \`${a.loop.channel}\` at **${a.loop.speedPxPerS} px/s** (range ${a.loop.min} → ${a.loop.max}). Duplicate the content so the loop is seamless.`);
     } else if (e.trigger === 'mouse-move' && a.mouse) {
-      lines.push(`${lines.length + 1}. Follow the pointer on the ${a.mouse.axis} axis: \`${a.mouse.channel} = gain × pointer${a.mouse.axis.toUpperCase()}\` with gain ≈ **${a.mouse.gain}**${a.mouse.lerp ? `, smoothed with lerp ≈ **${a.mouse.lerp}** per frame` : ''}. Measured ranges: ${fmt(v)}.`);
+      lines.push(`${n()}. Follow the pointer on the ${a.mouse.axis} axis: \`${a.mouse.channel} = gain × pointer${a.mouse.axis.toUpperCase()}\` with gain ≈ **${a.mouse.gain}**${a.mouse.lerp ? `, smoothed with lerp ≈ **${a.mouse.lerp}** per frame` : ''}. Measured ranges: ${fmt(v)}.`);
     } else {
       const from = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x.from]));
       const to = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x.to]));
-      lines.push(`${lines.length + 1}. Animate (measured, trigger \`${e.trigger}\`): duration **${a.duration}s**, ease \`${a.ease}\`${a.ease_named_nearest && a.ease !== a.ease_named_nearest ? ` (nearest named: \`${a.ease_named_nearest}\`)` : ''}${a.stagger ? `, stagger **${a.stagger}s**` : ''}. Fit RMS ${a.fit_rms}.`);
+      lines.push(`${n()}. Animate (measured, trigger \`${e.trigger}\`): duration **${a.duration}s**, ease \`${a.ease}\`${a.ease_named_nearest && a.ease !== a.ease_named_nearest ? ` (nearest named: \`${a.ease_named_nearest}\`)` : ''}${a.stagger ? `, stagger **${a.stagger}s**` : ''}. Fit RMS ${a.fit_rms}.`);
       lines.push('');
       lines.push('```js');
       lines.push(`gsap.fromTo('${sel.slice(0, 3).join(', ') || target}', ${gsapVarsLiteral(from)}, ${gsapVarsLiteral({ ...to, duration: a.duration, ease: a.ease && a.ease.startsWith('cubic') ? `CustomEase:${a.ease_bezier && a.ease_bezier.join(',')}` : a.ease, ...(a.stagger ? { stagger: a.stagger } : {}) })}); // x/y are px (computed transform)`);
@@ -190,15 +192,15 @@ function recipe(e, analysis) {
       if (e.trigger === 'scroll-enter') lines.push(`Trigger it when the element enters the viewport (IntersectionObserver or ScrollTrigger \`start: 'top 85%'\` [estimated]).`);
     }
   } else if (e.source === 'measured:hover') {
-    lines.push(`${lines.length + 1}. On hover, apply these computed-style changes (before → after):`);
+    lines.push(`${n()}. On hover, apply these computed-style changes (before → after):`);
     lines.push('');
     for (const c of (a.changes || []).slice(0, 12)) lines.push(`   - \`${c.sel}\` **${c.prop}**: \`${c.before}\` → \`${c.after}\``);
     if (a.transition) lines.push(`   Transition declared on the element: \`${a.transition}\`.`);
     if (a.magnetic) lines.push(`   Magnetic: the element moves toward the pointer by ≈ ${a.magnetic.maxShiftPx}px when the pointer is ${a.magnetic.offsetPx}px from its centre (strength ≈ ${a.magnetic.strength}).`);
   }
-  if (e.effect_type === 'image-parallax') lines.push(`${lines.length + 1}. Keep the media inside an \`overflow: hidden\` frame, oversized enough to never reveal an edge.`);
-  if (e.effect_type === 'marquee') lines.push(`${lines.length + 1}. Duplicate the track content and wrap with a modulo so it never jumps.`);
-  lines.push(`${lines.length + 1}. Respect \`prefers-reduced-motion: reduce\`: ${analysisReduced(analysis)}`);
+  if (e.effect_type === 'image-parallax') lines.push(`${n()}. Keep the media inside an \`overflow: hidden\` frame, oversized enough to never reveal an edge.`);
+  if (e.effect_type === 'marquee') lines.push(`${n()}. Duplicate the track content and wrap with a modulo so it never jumps.`);
+  lines.push(`${n()}. Respect \`prefers-reduced-motion: reduce\`: ${analysisReduced(analysis)}`);
   return lines.join('\n');
 }
 function analysisReduced(analysis) {
@@ -563,7 +565,7 @@ export async function buildPackFiles(cap, analysis, opts) {
     complexity: analysis.complexity,
     stack,
     detectedStack: analysis.stack,
-    breakpoints: Object.keys(cap.breakpoints || {}).map(Number),
+    breakpoints: Object.keys(cap.breakpoints || {}).map(Number).sort((a, b) => b - a), // main (widest) first
     sections: analysis.sections.map((s) => s.id),
     effects: effects.map((e) => e.id),
     webgl: analysis.webgl.cards.map((w) => w.id),
@@ -644,19 +646,20 @@ export async function buildPackFiles(cap, analysis, opts) {
       top: s.top,
     })),
     effects: effects
-      .filter((e) => e.curve || e.trigger === 'hover')
+      .filter((e) => e.curve || e.trigger === 'hover' || e.trigger === 'time-loop')
       .map((e) => ({
         id: e.id,
         section: e.section,
         anchor: `[data-dip-effect="${e.id}"]`,
         trigger: e.trigger,
-        metric: e.trigger === 'scroll-scrub' ? 'scroll-curve-rms' : e.trigger === 'hover' ? 'hover-style' : 'motion-rms',
+        metric: e.trigger === 'scroll-scrub' ? 'scroll-curve-rms' : e.trigger === 'hover' ? 'hover-style' : e.trigger === 'time-loop' ? 'loop-speed' : 'motion-rms',
         threshold: e.confidence < 0.6 ? 0.12 : 0.05,
         duration: e.animation && typeof e.animation.duration === 'number' ? e.animation.duration : null,
         delay: e.animation && e.animation.delay ? e.animation.delay : 0,
         stagger: e.animation && typeof e.animation.stagger === 'number' ? e.animation.stagger : null,
         channels: (e.animation && e.animation.channels) || null,
-        scroll: e.animation && e.animation.scroll ? e.animation.scroll : e.scrollTrigger ? { startPx: e.scrollTrigger.startPx, endPx: e.scrollTrigger.endPx } : null,
+        scroll: e.animation && e.animation.scroll ? e.animation.scroll : e.scrollTrigger ? { startPx: e.scrollTrigger.startPx, endPx: e.scrollTrigger.endPx, pxPerScrollPx: e.measuredCheck && e.measuredCheck.pxPerScrollPx } : null,
+        loop: e.trigger === 'time-loop' ? e.measuredLoop || (e.animation && e.animation.loop) || null : undefined,
         curve: e.curve ? `motion/curves/${e.id}.json` : null,
         hoverChanges: e.trigger === 'hover' && e.animation && e.animation.changes ? e.animation.changes.slice(0, 12) : undefined,
         frames: e.reference.frames,

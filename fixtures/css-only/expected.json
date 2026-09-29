@@ -1,0 +1,10 @@
+{
+  "stack": [],
+  "scroll": { "type": "native" },
+  "effects": [
+    { "effect_type": "fade-up-reveal", "trigger": "load", "source": "read:waapi", "duration": 0.9, "ease": "cubic-bezier(0.22, 1, 0.36, 1)" },
+    { "effect_type": "fade-up-reveal", "trigger": "scroll-enter", "source": "read:waapi", "duration": 0.8, "ease": "cubic-bezier(0.33, 1, 0.68, 1)", "stagger": 0.1 },
+    { "effect_type": "hover-state", "trigger": "hover", "source": "measured:hover" },
+    { "trigger": "time-loop", "source": "read:waapi", "duration": 1.2 }
+  ]
+}

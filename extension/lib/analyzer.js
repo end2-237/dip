@@ -421,6 +421,7 @@ function normalize(xs, ys) {
 }
 
 function measureTrack(tk, ctx) {
+  ctx = ctx || {};
   const chans = activeChannels(tk);
   if (!chans.length) return null;
   const main = chans.find((c) => c.ch !== 'clip' && c.ch !== 'filter') || chans[0];
@@ -438,9 +439,13 @@ function measureTrack(tk, ctx) {
   if (drv.driver === 'time') {
     const segs = segmentsOf(tk, main.ch, 150).filter((s) => s.end - s.start >= 3);
     if (!segs.length) return null;
-    const seg = segs[0];
+    // capture: first occurrence (intro order); verify: the largest move (ignores tiny initial writes)
+    const seg = ctx.segmentPick === 'largest' ? segs.slice().sort((a, b) => Math.abs(tk[main.ch][b.end] - tk[main.ch][b.start]) - Math.abs(tk[main.ch][a.end] - tk[main.ch][a.start]))[0] : segs[0];
     const ts = tk.t.slice(seg.start, seg.end + 1);
     const vs = tk[main.ch].slice(seg.start, seg.end + 1);
+    // The sample before the first change may be stale (value held for a while): the motion really
+    // started about one frame before the first changed sample.
+    if (ts.length > 2 && ts[1] - ts[0] > 34) ts[0] = ts[1] - 16.7;
     const nrm = normalize(ts, vs);
     const fit = fitEase(nrm.x, nrm.y);
     m.start = ts[0];
@@ -525,7 +530,13 @@ function measureTrack(tk, ctx) {
   } else if (drv.driver === 'loop') {
     const v = tk[main.ch];
     const t = tk.t;
-    const speed = (v[v.length - 1] - v[0]) / Math.max(1, t[t.length - 1] - t[0]);
+    // median instantaneous speed (robust to the wrap-around jumps of a looping track)
+    const speeds = [];
+    for (let i = 1; i < v.length; i++) {
+      const dt = t[i] - t[i - 1];
+      if (dt > 0 && dt < 100) speeds.push((v[i] - v[i - 1]) / dt);
+    }
+    const speed = median(speeds.filter((s) => Math.abs(s) < 5)) || 0;
     m.loop = { channel: main.name, speedPxPerS: r2(speed * 1000), min: main.min, max: main.max };
     m.values = {};
     for (const c of chans) if (c.ch !== 'clip' && c.ch !== 'filter') m.values[c.name] = { min: c.min, max: c.max };
@@ -961,9 +972,13 @@ export function analyze(cap) {
     if (!tk) continue;
     try {
       const m = measureTrack(tk, ctx);
+      if (m && m.loop) e.measuredLoop = m.loop;
       if (m && m.curve) {
-        e.curve = m.curve;
-        e.measuredCheck = { driver: m.driver, duration: m.duration, fit: m.fit ? { best: m.fit.best, rms: m.fit.rms } : null, scrollStart: m.scrollStart, scrollEnd: m.scrollEnd };
+        // read values are ground truth: the reference curve is the exact ease; the recorder curve is kept as a cross-check
+        const exact = e.trigger !== 'scroll-scrub' && e.animation && typeof e.animation.ease === 'string' && !e.animation.steps;
+        e.curve = exact ? sampleEase(e.animation.ease, 40) : m.curve;
+        e.curveSource = exact ? 'ease-function' : 'recorder';
+        e.measuredCheck = { driver: m.driver, duration: m.duration, fit: m.fit ? { best: m.fit.best, rms: m.fit.rms } : null, scrollStart: m.scrollStart, scrollEnd: m.scrollEnd, pxPerScrollPx: m.ratio };
       }
     } catch (err) {
       log.push('check failed: ' + err.message);

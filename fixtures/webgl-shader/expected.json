@@ -1,0 +1,7 @@
+{
+  "stack": ["webgl"],
+  "scroll": { "type": "native" },
+  "effects": [],
+  "webgl": [{ "type": "fluid-background-shader", "uniforms": { "uTime": "time", "uMouse": "mouse", "uScroll": "scroll" } }],
+  "tier": "B"
+}

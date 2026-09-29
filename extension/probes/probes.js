@@ -832,7 +832,7 @@
   }
 
   // ================================================================ P4c — class mutations
-  const mutations = { classes: [], childList: 0, lastActivity: now(), count: 0 };
+  const mutations = { classes: [], childList: 0, lastActivity: now(), count: 0, nonStyle: 0 };
   let mo = null;
   function startMO() {
     try {
@@ -840,6 +840,7 @@
         mutations.lastActivity = now();
         for (const m of list) {
           mutations.count++;
+          if (m.attributeName !== 'style') mutations.nonStyle++;
           if (m.type === 'childList') {
             mutations.childList++;
             continue;
@@ -1364,6 +1365,7 @@
       const id = 's' + String(i + 1).padStart(2, '0') + '-' + name;
       const rootEl = x.el.classList.contains('pin-spacer') && x.el.firstElementChild ? x.el.firstElementChild : x.el;
       const bg = N.getCS(rootEl).backgroundColor;
+      const rootH = rootEl !== x.el ? Math.round(rootEl.getBoundingClientRect().height) : null;
       const hEl = x.el.querySelector('h1, h2, h3');
       return {
         id,
@@ -1372,9 +1374,10 @@
         tag: rootEl.localName,
         pinSpacer: rootEl !== x.el ? true : undefined,
         top: Math.round(x.top),
-        height: Math.round(x.h),
+        height: rootH || Math.round(x.h),
+        span: rootH ? Math.round(x.h) : undefined, // pinned: scroll distance including pin spacing
         background: bg,
-        heading: hEl ? hEl.textContent.trim().replace(/\s+/g, ' ').slice(0, 120) : null,
+        heading: hEl ? (hEl.innerText || hEl.textContent).trim().replace(/\s+/g, ' ').slice(0, 120) : null,
         position: x.cs.position,
         extra: x.extra.map(selector),
       };
@@ -1826,12 +1829,27 @@
     }
     return true;
   }
+  // Layout box without transforms (animations move elements; layout comparisons must not depend on it).
+  function layoutRect(el) {
+    if (!(el instanceof HTMLElement) || !el.offsetParent) return absRect(el);
+    let x = 0, y = 0, cur = el;
+    while (cur) {
+      x += cur.offsetLeft;
+      y += cur.offsetTop;
+      cur = cur.offsetParent;
+    }
+    return { x: r2(x), y: r2(y), w: el.offsetWidth, h: el.offsetHeight };
+  }
+  function layoutOf(sel) {
+    const el = D.querySelector(sel);
+    return el ? layoutRect(el) : null;
+  }
   function rectsFor(ids) {
     const out = {};
     for (const k of ids || []) {
       try {
         const el = (k.startsWith('n') && elByNid(k)) || D.querySelector(k);
-        if (el) out[k] = absRect(el);
+        if (el) out[k] = layoutRect(el);
       } catch (e) {
         /* ignore */
       }
@@ -1950,11 +1968,12 @@
     const t0 = now();
     quietMs = quietMs || 500;
     maxMs = maxMs || 12000;
-    let lastSig = activitySig();
+    const streak = new Map(); // nid -> consecutive active ticks; continuous loops (marquees…) are ignored after 2s
+    let lastSig = activitySig(streak);
     let stillSince = now();
     while (now() - t0 < maxMs) {
       await sleep(100);
-      const sig = activitySig();
+      const sig = activitySig(streak);
       if (sig !== lastSig) {
         lastSig = sig;
         stillSince = now();
@@ -1962,9 +1981,18 @@
     }
     return { stable: false, ms: Math.round(now() - t0) };
   }
-  function activitySig() {
-    let n = mutations.count;
-    for (const tk of rec.tracked.values()) n += tk.t.length;
+  function activitySig(streak) {
+    let n = mutations.nonStyle;
+    const tNow = rel();
+    for (const tk of rec.tracked.values()) {
+      const active = tk.t.length && tNow - tk.t[tk.t.length - 1] < 120;
+      if (streak) {
+        const k = (streak.get(tk.nid) || 0) + 1;
+        streak.set(tk.nid, active ? k : 0);
+        if (active && k > 20) continue; // looping element
+      }
+      n += tk.t.length;
+    }
     return n;
   }
   function detectPreloader() {
@@ -2476,6 +2504,7 @@
     rectsFor,
     tracksUnder,
     watch,
+    layoutOf,
     // recorder tracks only (lighter than collectMotion)
     recorderData: () => recorderData(),
     findCursorCandidates,

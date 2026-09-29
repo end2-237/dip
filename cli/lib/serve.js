@@ -9,7 +9,7 @@ export function serve(root, port) {
   return new Promise((resolve) => {
     const srv = http.createServer((req, res) => {
       const u = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-      let p = path.join(root, u);
+      let p = path.resolve(root, '.' + u);
       if (!p.startsWith(path.resolve(root))) {
         res.writeHead(403).end();
         return;

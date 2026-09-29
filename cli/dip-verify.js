@@ -65,7 +65,8 @@ async function main() {
   const url = args.url || guessUrl(process.cwd());
   const onlySection = typeof args.section === 'string' ? args.section : null;
   const tokensOnly = !!args.tokens && !args.all;
-  const bps = args.breakpoints ? String(args.breakpoints).split(',').map(Number) : onlySection ? [cfg.breakpoints[0]] : cfg.breakpoints;
+  const mainBp = Math.max(...cfg.breakpoints);
+  const bps = args.breakpoints ? String(args.breakpoints).split(',').map(Number) : onlySection ? [mainBp] : cfg.breakpoints.slice().sort((a, b) => b - a);
   const iterFile = path.join(packDir, 'verify', '.iteration');
   const iteration = (fs.existsSync(iterFile) ? +fs.readFileSync(iterFile, 'utf8') || 0 : 0) + 1;
   fs.writeFileSync(iterFile, String(iteration));
@@ -117,16 +118,19 @@ async function main() {
         // layout: section height & position
         const refH = s.height && s.height[bp];
         const hScore = refH ? clamp01(1 - Math.abs(rect.abs.h - refH) / refH) : 1;
-        const refTop = bp === cfg.breakpoints[0] ? s.top : null;
+        const refTop = bp === mainBp ? s.top : null;
         const tScore = refTop != null ? clamp01(1 - Math.abs(rect.abs.y - refTop) / Math.max(vh, refTop || 1)) : 1;
         let anchorScore = 1;
-        const anchored = effects.filter((e) => e.section === s.id && e.rect && bp === cfg.breakpoints[0]);
+        const anchored = effects.filter((e) => e.section === s.id && e.rect && bp === mainBp);
         const ious = [];
+        const secLayout = await driver.call('layoutOf', s.anchor).catch(() => null);
         for (const e of anchored) {
-          const er = await driver.call('rectOf', e.anchor).catch(() => null);
-          if (!er) continue;
-          ious.push(iou({ x: er.abs.x, y: er.abs.y - rect.abs.y, w: er.abs.w, h: er.abs.h }, { x: e.rect.x, y: e.rect.y - (s.top || 0), w: e.rect.w, h: e.rect.h }));
+          const er = await driver.call('layoutOf', e.anchor).catch(() => null);
+          if (!er || !secLayout) continue;
+          ious.push(iou({ x: er.x, y: er.y - secLayout.y, w: er.w, h: er.h }, { x: e.rect.x, y: e.rect.y - (s.top || 0), w: e.rect.w, h: e.rect.h }));
         }
+        r.layoutDetail = r.layoutDetail || {};
+        r.layoutDetail[bp] = { height: r2(hScore), top: r2(tScore), anchors: r2(anchorScore) };
         if (ious.length) anchorScore = ious.reduce((a, b) => a + b, 0) / ious.length;
         r.layout[bp] = r2(0.5 * hScore + 0.2 * tScore + 0.3 * anchorScore);
         if (refH && Math.abs(rect.abs.h - refH) / refH > 0.08) r.notes.push(`@${bp}: section height ${Math.round(rect.abs.h)}px, expected ${refH}px`);
@@ -145,7 +149,9 @@ async function main() {
         const shot = await driver.screenshot({ x: 0, y: Math.max(0, offset), w: ping.vw, h });
         // media areas (proprietary assets are replaced in the clone): masked in both images, in clip coordinates
         const clipY = Math.max(0, offset);
-        const masks = await driver.evaluate(`(() => { const root = document.querySelector(${JSON.stringify(s.anchor)}); if (!root) return []; return [...root.querySelectorAll(${JSON.stringify(cfg.masks.join(','))})].map((m) => m.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0).map((b) => ({ x: b.x, y: b.y - ${clipY}, w: b.width, h: b.height })); })()`);
+        // time-looping effects (marquees…) are not deterministic: masked too
+        const maskSel = [...cfg.masks, ...effects.filter((e) => e.trigger === 'time-loop').map((e) => e.anchor)].join(',');
+        const masks = await driver.evaluate(`(() => { const root = document.querySelector(${JSON.stringify(s.anchor)}); if (!root) return []; return [...root.querySelectorAll(${JSON.stringify(maskSel)})].map((m) => m.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0).map((b) => ({ x: b.x, y: b.y - ${clipY}, w: b.width, h: b.height })); })()`);
         const cmp = await helper.evaluate(compareInPage, { refB64: fs.readFileSync(refPath).toString('base64'), gotB64: shot, masks, width: 320 });
         r.visual[bp] = r2(cmp.ssim);
         fs.mkdirSync(path.join(diffDir, String(bp)), { recursive: true });
@@ -158,9 +164,9 @@ async function main() {
     }
 
     // motion (main breakpoint)
-    const main = cfg.breakpoints[0];
+    const main = mainBp;
     for (const e of effects) {
-      if (!e.curve && e.metric !== 'hover-style') continue;
+      if (!e.curve && e.metric !== 'hover-style' && e.metric !== 'loop-speed') continue;
       await load(main);
       const out = (res.effects[e.id] = { section: e.section, trigger: e.trigger, notes: [] });
       const present = await driver.call('rectOf', e.anchor).catch(() => null);
@@ -172,6 +178,7 @@ async function main() {
       }
       try {
         if (e.metric === 'hover-style') Object.assign(out, await verifyHover(driver, e));
+        else if (e.metric === 'loop-speed') Object.assign(out, await verifyLoop(driver, e));
         else if (e.trigger === 'scroll-scrub') Object.assign(out, await verifyScrub(driver, e, packDir));
         else Object.assign(out, await verifyTimed(driver, page, e, packDir));
       } catch (err) {
@@ -184,7 +191,7 @@ async function main() {
 
   // tokens
   if (!onlySection || tokensOnly) {
-    await load(cfg.breakpoints[0]);
+    await load(mainBp);
     res.tokens = await verifyTokens(driver, cfg);
     for (const n of res.tokens.notes.slice(0, 6)) issue('tokens', n, ((1 - res.tokens.score) * cfg.weights.tokens) / Math.max(1, res.tokens.notes.length));
   }
@@ -254,7 +261,7 @@ async function verifyTimed(driver, page, e, packDir) {
   }
   await sleep(((e.duration || 1) + (e.delay || 0) + (e.stagger || 0) * 10) * 1000 + 1200);
   const { tracks } = await pickTrack(driver, e);
-  const ms = tracks.map((t) => measureTrack(t, { marks: [] })).filter((m) => m && m.driver === 'time' && m.curve);
+  const ms = tracks.map((t) => measureTrack(t, { marks: [], segmentPick: 'largest' })).filter((m) => m && m.driver === 'time' && m.curve);
   const notes = [];
   if (!ms.length) return { score: 0.2, notes: ['no motion measured on the anchor or its children — is the animation implemented and triggered?'] };
   ms.sort((a, b) => a.start - b.start);
@@ -266,8 +273,8 @@ async function verifyTimed(driver, page, e, packDir) {
   let durScore = 1;
   if (e.duration) {
     const err = Math.abs(m.duration - e.duration) / e.duration;
-    durScore = clamp01(1 - Math.max(0, err - 0.05) / 0.3);
-    if (err > 0.05) notes.push(`duration ${m.duration}s, expected ${e.duration}s`);
+    durScore = clamp01(1 - Math.max(0, err - 0.1) / 0.3); // ±10%: frame sampling blurs the tail of long eases
+    if (err > 0.1) notes.push(`duration ${m.duration}s, expected ${e.duration}s`);
   }
   let stScore = 1;
   if (e.stagger && ms.length > 1) {
@@ -308,6 +315,20 @@ async function verifyScrub(driver, e, packDir) {
   }
   const curveScore = rms == null ? 0.8 : clamp01(1 - Math.max(0, rms - thr / 2) / (thr * 4));
   return { score: r2(0.75 * curveScore + 0.25 * ratioScore), rms: rms != null ? r2(rms) : null, notes };
+}
+
+async function verifyLoop(driver, e) {
+  await driver.call('watch', e.anchor);
+  await sleep(5000);
+  const { tracks } = await pickTrack(driver, e);
+  const ms = tracks.map((t) => measureTrack(t, { marks: [] })).filter((m) => m && m.loop);
+  if (!ms.length) return { score: 0.2, notes: ['no continuous loop measured on the anchor — is the loop running?'] };
+  const m = ms[0];
+  if (!e.loop || !e.loop.speedPxPerS) return { score: 1, notes: [], measured: m.loop };
+  const err = Math.abs(Math.abs(m.loop.speedPxPerS) - Math.abs(e.loop.speedPxPerS)) / Math.abs(e.loop.speedPxPerS);
+  const notes = err > 0.1 ? [`loop speed ${m.loop.speedPxPerS}px/s, expected ${e.loop.speedPxPerS}px/s`] : [];
+  if (Math.sign(m.loop.speedPxPerS) !== Math.sign(e.loop.speedPxPerS)) notes.push('loop runs in the opposite direction');
+  return { score: r2(clamp01(1 - Math.max(0, err - 0.05) / 0.5) * (notes.some((n) => n.includes('opposite')) ? 0.5 : 1)), measured: m.loop, notes };
 }
 
 async function verifyHover(driver, e) {
@@ -425,7 +446,8 @@ function report(res, cfg, onlySection) {
     L.push('Suggested priority: ' + top.map((i) => `${i.scope} (${i.msg}, est. +${r2(i.gain)})`).join(', then '));
   }
   L.push('');
-  L.push(res.pass ? '✓ PASS' : `✗ FAIL — fix the items above and run dip-verify again`);
+  const below = ['visual', 'layout', 'motion', 'tokens'].filter((k) => s[k] != null && s[k] < cfg.thresholds[k]);
+  L.push(res.pass ? `✓ PASS${below.length ? ` — but ${below.join(', ')} below target: keep iterating on the items above` : ''}` : `✗ FAIL — fix the items above and run dip-verify again`);
   return L.join('\n') + '\n';
 }
 

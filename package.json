@@ -9,7 +9,7 @@
     "dip-verify": "cli/dip-verify.js"
   },
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "capture": "node cli/dip-capture.js",
     "verify": "node cli/dip-verify.js",
     "serve:fixtures": "node -e \"import('./cli/lib/serve.js').then(m=>m.serve('fixtures',5555)).then(s=>console.log(s.url))\"",
