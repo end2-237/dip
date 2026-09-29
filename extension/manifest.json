@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "DIP — Design Intelligence Pipeline",
+  "short_name": "DIP",
+  "version": "0.1.0",
+  "description": "Dissect creative websites (GSAP, Lenis, WebGL…) into a Reproduction Pack that a coding agent can rebuild with measurable fidelity.",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "unlimitedStorage",
+    "scripting",
+    "debugger",
+    "downloads",
+    "tabs",
+    "activeTab"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "DIP — Disséquer ce site",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "minimum_chrome_version": "116"
+}

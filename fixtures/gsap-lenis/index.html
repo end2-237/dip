@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fixture — GSAP + Lenis</title>
+<style>
+  :root { --color-bg: #0e0e0e; --color-fg: #f2efe8; --color-accent: #ff4d2e; --space-m: 32px; --radius: 12px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html.lenis, html.lenis body { height: auto; }
+  body { background: var(--color-bg); color: var(--color-fg); font-family: Georgia, serif; font-size: 18px; line-height: 1.5; }
+  header.nav { position: fixed; top: 0; left: 0; right: 0; height: 72px; display: flex; justify-content: space-between; align-items: center; padding: 0 40px; z-index: 10; mix-blend-mode: difference; }
+  header.nav a { color: #fff; text-decoration: none; letter-spacing: 0.04em; }
+  .hero { height: 100vh; display: flex; align-items: flex-end; padding: 0 40px 80px; }
+  .hero h1 { font-size: clamp(48px, 2.4rem + 5vw, 128px); line-height: 0.95; letter-spacing: -0.02em; font-weight: 400; }
+  .manifesto { min-height: 100vh; padding: 160px 40px; display: grid; grid-template-columns: repeat(12, 1fr); column-gap: 24px; }
+  .manifesto p { grid-column: 3 / span 8; font-size: 36px; line-height: 1.2; }
+  .reveal { opacity: 0; transform: translateY(60px); }
+  .work { padding: 120px 40px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 32px; }
+  .card { position: relative; overflow: hidden; border-radius: var(--radius); aspect-ratio: 4 / 5; }
+  .card .media { position: absolute; inset: -15% 0; background: linear-gradient(135deg, #3b3bff, #ff4d2e); }
+  .pinned { height: 100vh; background: #1d1d1d; display: flex; align-items: center; justify-content: center; }
+  .pinned .box { width: 200px; height: 200px; background: var(--color-accent); border-radius: 24px; }
+  .marquee { overflow: hidden; white-space: nowrap; padding: 48px 0; border-top: 1px solid #333; border-bottom: 1px solid #333; }
+  .marquee .track { display: inline-block; font-size: 80px; }
+  .cta { height: 80vh; display: flex; align-items: center; justify-content: center; }
+  .btn { display: inline-block; padding: 20px 48px; border-radius: 999px; background: var(--color-fg); color: var(--color-bg); font-size: 20px; text-decoration: none; transition: background-color 0.4s cubic-bezier(0.65, 0, 0.35, 1), transform 0.4s cubic-bezier(0.65, 0, 0.35, 1); }
+  .btn:hover { background-color: #ff4d2e; transform: scale(1.06); }
+  footer { padding: 80px 40px; border-top: 1px solid #333; }
+  @media (max-width: 768px) { .work { grid-template-columns: 1fr; } .manifesto p { grid-column: 1 / -1; font-size: 24px; } }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+<header class="nav"><a href="#">Studio</a><a href="#work">Work</a></header>
+<main>
+  <section class="hero" id="hero"><h1 class="hero-title">We craft digital<br>experiences that<br>move people</h1></section>
+  <section class="manifesto" id="manifesto"><p class="reveal">Motion is not decoration. It is the grammar that tells people where to look, what matters and what comes next.</p></section>
+  <section class="work" id="work">
+    <div class="card"><div class="media"></div></div>
+    <div class="card"><div class="media"></div></div>
+    <div class="card"><div class="media"></div></div>
+    <div class="card"><div class="media"></div></div>
+  </section>
+  <section class="pinned" id="pinned"><div class="box"></div></section>
+  <section class="marquee" id="marquee"><div class="track">Design · Motion · Code · Design · Motion · Code · Design · Motion · Code ·&nbsp;</div></section>
+  <section class="cta" id="contact"><a class="btn" href="#">Start a project</a></section>
+</main>
+<footer><p>© Fixture studio</p></footer>
+<script src="../vendor/lenis.min.js"></script>
+<script src="../vendor/gsap.min.js"></script>
+<script src="../vendor/ScrollTrigger.min.js"></script>
+<script src="../vendor/SplitText.min.js"></script>
+<script>
+  gsap.registerPlugin(ScrollTrigger, SplitText);
+  const lenis = new Lenis({ lerp: 0.1, wheelMultiplier: 1 });
+  lenis.on('scroll', ScrollTrigger.update);
+  gsap.ticker.add((t) => lenis.raf(t * 1000));
+  gsap.ticker.lagSmoothing(0);
+
+  // e: hero title lines reveal (expected: yPercent 110 -> 0, 1.2s, expo.out, stagger 0.08, delay 0.35)
+  const split = new SplitText('.hero-title', { type: 'lines', mask: 'lines' });
+  gsap.from(split.lines, { yPercent: 110, duration: 1.2, ease: 'expo.out', stagger: 0.08, delay: 0.35 });
+
+  // e: manifesto fade-up on enter (expected: y 60 -> 0, opacity 0 -> 1, 1s, power3.out)
+  gsap.to('.manifesto .reveal', { y: 0, opacity: 1, duration: 1, ease: 'power3.out', scrollTrigger: { trigger: '.manifesto', start: 'top 70%' } });
+
+  // e: card parallax (scrubbed, yPercent -10 -> 10)
+  document.querySelectorAll('.card .media').forEach((m) => {
+    gsap.fromTo(m, { yPercent: -10 }, { yPercent: 10, ease: 'none', scrollTrigger: { trigger: m.parentElement, start: 'top bottom', end: 'bottom top', scrub: true } });
+  });
+
+  // e: pinned rotation
+  gsap.to('.pinned .box', { rotation: 360, scale: 1.5, ease: 'none', scrollTrigger: { trigger: '.pinned', start: 'top top', end: '+=800', scrub: 1, pin: true } });
+
+  // e: marquee loop (xPercent -50, 12s linear, repeat -1)
+  gsap.to('.marquee .track', { xPercent: -50, duration: 12, ease: 'none', repeat: -1 });
+</script>
+</body>
+</html>

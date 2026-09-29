@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fixture — CSS only</title>
+<style>
+  :root { --bg: #f4f1ea; --fg: #151515; --accent: #2f5bff; }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: Helvetica, Arial, sans-serif; }
+  .hero { height: 100vh; display: grid; place-items: center; }
+  .hero h1 { font-size: 7vw; font-weight: 700; animation: rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
+  .items { padding: 120px 8vw; display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
+  .item { height: 320px; background: #ddd6c8; border-radius: 8px; opacity: 0; transform: translateY(50px); transition: opacity 0.8s ease-out, transform 0.8s cubic-bezier(0.33, 1, 0.68, 1); }
+  .item.is-inview { opacity: 1; transform: none; }
+  .item:nth-child(2) { transition-delay: 0.1s; } .item:nth-child(3) { transition-delay: 0.2s; }
+  .links { padding: 120px 8vw; display: flex; gap: 40px; }
+  .links a { color: var(--fg); font-size: 28px; text-decoration: none; background: linear-gradient(currentColor, currentColor) 0 100% / 0 2px no-repeat; transition: background-size 0.5s ease; }
+  .links a:hover { background-size: 100% 2px; color: var(--accent); }
+  .spin { width: 80px; height: 80px; margin: 80px auto; border: 6px solid var(--accent); border-radius: 50%; border-top-color: transparent; animation: spin 1.2s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  footer { height: 60vh; background: var(--fg); color: var(--bg); padding: 60px 8vw; }
+</style>
+</head>
+<body>
+<section class="hero"><h1>Pure CSS motion</h1></section>
+<section class="items"><div class="item"></div><div class="item"></div><div class="item"></div></section>
+<section class="links"><a href="#">About</a><a href="#">Work</a><a href="#">Contact</a></section>
+<div class="spin"></div>
+<footer>Footer</footer>
+<script>
+  const io = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && e.target.classList.add('is-inview')), { threshold: 0.2 });
+  document.querySelectorAll('.item').forEach((el) => io.observe(el));
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fixture — WebGL shader</title>
+<style>
+  * { margin: 0; box-sizing: border-box; }
+  body { background: #000; color: #fff; font-family: sans-serif; }
+  canvas#bg { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; }
+  section { height: 100vh; display: grid; place-items: center; font-size: 64px; }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<section>Fluid background</section>
+<section>Second section</section>
+<script>
+  const c = document.getElementById('bg');
+  const gl = c.getContext('webgl');
+  const vs = `attribute vec2 p; varying vec2 vUv; void main(){ vUv = p * .5 + .5; gl_Position = vec4(p, 0., 1.); }`;
+  const fs = `precision mediump float; varying vec2 vUv; uniform float uTime; uniform vec2 uMouse; uniform float uScroll;
+  float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
+  void main(){ float d = distance(vUv, uMouse); float n = noise(vUv * 4. + uTime * .2 + uScroll * .001); vec3 col = mix(vec3(.1,.1,.4), vec3(1.,.3,.2), smoothstep(.3, .8, n + .3 - d)); gl_FragColor = vec4(col, 1.); }`;
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); return o; };
+  const pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(pr); gl.useProgram(pr);
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const uT = gl.getUniformLocation(pr, 'uTime'), uM = gl.getUniformLocation(pr, 'uMouse'), uS = gl.getUniformLocation(pr, 'uScroll');
+  const mouse = [0.5, 0.5], target = [0.5, 0.5];
+  addEventListener('pointermove', (e) => { target[0] = e.clientX / innerWidth; target[1] = 1 - e.clientY / innerHeight; });
+  function frame(t) {
+    c.width = innerWidth; c.height = innerHeight; gl.viewport(0, 0, c.width, c.height);
+    mouse[0] += (target[0] - mouse[0]) * 0.08; mouse[1] += (target[1] - mouse[1]) * 0.08;
+    gl.uniform1f(uT, t / 1000); gl.uniform2f(uM, mouse[0], mouse[1]); gl.uniform1f(uS, scrollY);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
+</body>
+</html>

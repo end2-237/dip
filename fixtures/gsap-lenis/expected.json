@@ -1,0 +1,12 @@
+{
+  "stack": ["gsap", "scrolltrigger", "splittext", "lenis"],
+  "scroll": { "type": "lenis", "lerp": 0.1 },
+  "effects": [
+    { "effect_type": "text-reveal-lines", "trigger": "load", "source": "read:gsap", "duration": 1.2, "ease": "expo.out", "stagger": 0.08, "delay": 0.35 },
+    { "effect_type": "fade-up-reveal", "trigger": "scroll-enter", "source": "read:gsap", "duration": 1, "ease": "power3.out" },
+    { "effect_type": "image-parallax", "trigger": "scroll-scrub", "source": "read:gsap" },
+    { "effect_type": "pinned-sequence", "trigger": "scroll-scrub", "source": "read:gsap" },
+    { "effect_type": "marquee", "trigger": "time-loop", "source": "read:gsap", "duration": 12 },
+    { "effect_type": "hover-state", "trigger": "hover", "source": "measured:hover" }
+  ]
+}

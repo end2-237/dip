@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DIP — Design Intelligence Pipeline</title>
+<link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">DIP</span>
+    <div>
+      <div class="name">Design Intelligence Pipeline</div>
+      <div class="tagline" data-i18n="tagline"></div>
+    </div>
+  </div>
+  <button class="icon" id="btn-settings" title="Settings" aria-label="Settings">⚙</button>
+</header>
+
+<section id="onboarding" class="card notice" hidden>
+  <p data-i18n="ethics"></p>
+  <p class="muted" data-i18n="debuggerBanner"></p>
+  <button id="btn-onboard-ok" class="secondary" data-i18n="ok"></button>
+</section>
+
+<section id="settings" class="card" hidden>
+  <label><span data-i18n="language"></span>
+    <select id="set-lang"><option value="fr">Français</option><option value="en">English</option></select>
+  </label>
+  <label><span data-i18n="apiKey"></span>
+    <input id="set-key" type="password" autocomplete="off" placeholder="sk-ant-…">
+  </label>
+  <p class="muted small" data-i18n="apiKeyHint"></p>
+  <label class="row"><input id="set-llm" type="checkbox"> <span data-i18n="useLLM"></span></label>
+  <button id="btn-settings-save" class="secondary" data-i18n="save"></button>
+</section>
+
+<section class="card" id="target">
+  <div class="url" id="tab-url">—</div>
+  <div class="grid2">
+    <label><span data-i18n="mode"></span>
+      <select id="opt-mode"><option value="deep" data-i18n="deep"></option><option value="standard" data-i18n="standard"></option></select>
+    </label>
+    <label><span data-i18n="exportMode"></span>
+      <select id="opt-export"><option value="study" data-i18n="study"></option><option value="share" data-i18n="share"></option></select>
+    </label>
+    <label><span data-i18n="consent"></span>
+      <select id="opt-consent"><option value="reject" data-i18n="consentReject"></option><option value="hide" data-i18n="consentHide"></option><option value="none" data-i18n="consentNone"></option></select>
+    </label>
+    <label><span data-i18n="hovers"></span>
+      <input id="opt-hovers" type="number" min="0" max="60" value="30">
+    </label>
+  </div>
+  <div class="bps"><span data-i18n="breakpoints"></span>
+    <label class="chip"><input type="checkbox" value="1440" checked disabled> 1440</label>
+    <label class="chip"><input type="checkbox" value="1024" checked> 1024</label>
+    <label class="chip"><input type="checkbox" value="390" checked> 390</label>
+  </div>
+  <div class="actions">
+    <button id="btn-dissect" class="primary" data-i18n="dissect"></button>
+    <button id="btn-record" class="secondary" data-i18n="record"></button>
+  </div>
+</section>
+
+<section id="progress" class="card" hidden>
+  <div class="row between"><strong id="progress-title"></strong><span id="progress-pct">0%</span></div>
+  <div class="bar"><div id="progress-bar"></div></div>
+  <div id="progress-step" class="muted"></div>
+  <p class="muted small" data-i18n="closeWarn"></p>
+  <div class="actions">
+    <button id="btn-stop" class="primary" hidden data-i18n="stop"></button>
+  </div>
+</section>
+
+<section id="message" class="card" hidden></section>
+
+<section id="review" hidden>
+  <div class="card">
+    <div class="row between">
+      <h2 data-i18n="review"></h2>
+      <span class="tier" id="rv-tier"></span>
+    </div>
+    <div class="muted small" id="rv-meta"></div>
+    <h3 data-i18n="stack"></h3>
+    <div id="rv-stack" class="chips"></div>
+    <div id="rv-errors" class="muted small"></div>
+  </div>
+  <div class="card">
+    <h3 data-i18n="sections"></h3>
+    <div id="rv-sections" class="sections"></div>
+  </div>
+  <div class="card">
+    <h3 data-i18n="effects"></h3>
+    <div id="rv-effects"></div>
+  </div>
+  <div class="card sticky">
+    <div class="actions">
+      <button id="btn-export" class="primary" data-i18n="exportAll"></button>
+      <button id="btn-export-sel" class="secondary" data-i18n="exportSel"></button>
+    </div>
+  </div>
+</section>
+
+<script type="module" src="sidepanel.js"></script>
+</body>
+</html>
