@@ -60,6 +60,15 @@
     floaters.add(s);
   }
   scene.add(floaters);
+  // custom geometry (not parametric): exported by DIP as a study .glb
+  const gemGeo = new THREE.BufferGeometry();
+  gemGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0.5, 0, -0.3, 0, 0.3, 0.3, 0, 0.3, 0.3, 0, -0.3, -0.3, 0, -0.3, 0, -0.5, 0], 3));
+  gemGeo.setIndex([0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1, 5, 2, 1, 5, 3, 2, 5, 4, 3, 5, 1, 4]);
+  gemGeo.computeVertexNormals();
+  const gem = new THREE.Mesh(gemGeo, new THREE.MeshStandardMaterial({ color: 0x3fd0c9, roughness: 0.2, metalness: 0.6 }));
+  gem.name = 'gem';
+  gem.position.set(-2.6, 1.2, -1);
+  scene.add(gem);
   const pointer = { x: 0, y: 0 };
   addEventListener('pointermove', (e) => { pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = (e.clientY / innerHeight) * 2 - 1; });
   let last = performance.now();

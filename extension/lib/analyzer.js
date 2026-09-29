@@ -15,6 +15,8 @@ const median = (a) => {
   return s[Math.floor(s.length / 2)];
 };
 
+const plausibleStagger = (st) => (st != null && st > 0 && st <= 1.5 ? r3(st) : undefined);
+
 function sectionFor(sections, y) {
   if (y == null || !sections || !sections.length) return sections && sections[0] ? sections[0].id : null;
   let best = sections[0];
@@ -307,7 +309,8 @@ function waapiEffects(cap, ctx) {
         fill: tm.fill,
         ease,
         ease_bezier: bezierFor(ease),
-        stagger: staggerFromDelay ? r3(staggerFromDelay / 1000) : distinct.length > 1 ? r3(median(starts.slice(1).map((t, i) => t - starts[i])) / 1000) : undefined,
+        // a "stagger" of seconds is the same animation replayed later (new element, route, re-entry), not a stagger
+        stagger: plausibleStagger(staggerFromDelay ? staggerFromDelay / 1000 : distinct.length > 1 ? median(starts.slice(1).map((t, i) => t - starts[i])) / 1000 : null),
         timeline: scrollTl ? a.timeline : undefined,
         rangeStart: a.rangeStart,
         rangeEnd: a.rangeEnd,
@@ -775,6 +778,7 @@ function interactionEffects(cap, ctx) {
       animation: { kind: g.kind, label: g.label, controls: g.controls, expanded: g.expanded, settleMs: g.settleMs, opened: g.opened, styleChanges: (g.diff || []).slice(0, 20) },
       shots: g.shots || [],
       t: g.t || 0,
+      _closeT: g.closeT || null,
     });
   }
   return out;
@@ -1400,11 +1404,13 @@ export function analyze(cap) {
   if (toggles.length) {
     all = all.filter((e) => {
       if (e.source === 'measured:toggle' || e.trigger !== 'click' || e._kind === 'three') return true;
-      const tg = toggles.filter((g) => e.t >= g.t - 50 && e.t <= g.t + 2500).sort((a, b) => b.t - a.t)[0];
+      // opening motion follows the click; closing motion follows the restore click (closeT)
+      const tg = toggles.filter((g) => e.t >= g.t - 50 && e.t <= Math.max(g.t, g._closeT || 0) + 2500).sort((a, b) => b.t - a.t)[0];
       if (!tg) return true;
       const a = e.animation || {};
-      tg.animation.motion = tg.animation.motion || [];
-      tg.animation.motion.push({ targets: (e.targets || []).slice(0, 4).map((t) => t.selector), properties: a.properties || a.name || a.channels, duration: a.duration, delay: a.delay, ease: a.ease, ease_bezier: a.ease_bezier, values: a.values, keyframes: a.keyframes });
+      const key = tg._closeT && e.t >= tg._closeT - 50 ? 'closeMotion' : 'motion';
+      tg.animation[key] = tg.animation[key] || [];
+      tg.animation[key].push({ targets: (e.targets || []).slice(0, 4).map((t) => t.selector), properties: a.properties || a.name || a.channels, duration: a.duration, delay: a.delay, ease: a.ease, ease_bezier: a.ease_bezier, values: a.values, keyframes: a.keyframes });
       return false;
     });
   }
@@ -1420,6 +1426,10 @@ export function analyze(cap) {
       return false;
     });
   }
+  // "load" motion that started with the page scrolled far down is scroll-driven (header shown on scroll-up,
+  // late reveals): verify it by scrolling there, not by waiting at the top
+  const vh0 = (bp1440.viewport && bp1440.viewport.h) || 900;
+  for (const e of all) if (e.trigger === 'load' && e.startScroll != null && e.startScroll > vh0 * 0.75 && e._kind !== 'three') e.trigger = 'scroll-enter';
   all = mergeSimilar(all);
   // Drop trivial measured noise: single-target, sub-50ms, tiny changes
   all = all.filter((e) => !(e._kind === 'recorder' && e.trigger !== 'scroll-scrub' && e.trigger !== 'time-loop' && e.trigger !== 'mouse-move' && e.animation && e.animation.duration != null && e.animation.duration < 0.05));
@@ -1458,7 +1468,7 @@ export function analyze(cap) {
     taxonomyVersion: TAXONOMY_VERSION,
     url: cap.meta && cap.meta.url,
     sections,
-    effects: all.map(({ _m, _kind, t, ...rest }) => ({ ...rest, kind: _kind, t })),
+    effects: all.map(({ _m, _kind, _closeT, t, ...rest }) => ({ ...rest, kind: _kind, t })),
     scroll,
     typography: roles,
     tokens,

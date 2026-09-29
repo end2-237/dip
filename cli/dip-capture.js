@@ -12,26 +12,10 @@ import { CdpDriver } from '../extension/lib/cdp-driver.js';
 import { buildPackFiles, packName } from '../extension/lib/pack.js';
 import { zip } from '../extension/lib/zip.js';
 import { launchBrowser } from './lib/browser.js';
+import { parseArgs } from './lib/args.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROBES = fs.readFileSync(path.join(__dirname, '../extension/probes/probes.js'), 'utf8');
-
-function parseArgs(argv) {
-  const a = { _: [] };
-  for (let i = 0; i < argv.length; i++) {
-    const k = argv[i];
-    if (k.startsWith('--')) {
-      const key = k.slice(2);
-      const next = argv[i + 1];
-      if (next === undefined || next.startsWith('--')) a[key] = true;
-      else {
-        a[key] = next;
-        i++;
-      }
-    } else a._.push(k);
-  }
-  return a;
-}
 
 export async function capture(url, opts) {
   opts = opts || {};

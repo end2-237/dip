@@ -22,6 +22,9 @@ Produce a folder production/<client-slug>/ containing:
 6. 3D.md when relevant — scene concept, camera path, materials, light, post-processing, perf budget.
 7. BUILD_PLAN.md + AGENT_RULES.md — same format as a DIP pack, so Claude Code can build it section by section.
 8. verify/targets.json — tokens and motion curves the build must match (for review / dip-verify-style checks).
+9. ASSETS.md — every image / video / 3D object with role, size and a generation prompt in the new art
+   direction; reuse the client's own photos and logo when they are good enough. Production tools:
+   `node <DIP>/cli/dip-assets.js image|model|optimize` (fal.ai, pay per use) or 3D rebuilt in code.
 
 Originality rules: mix at least two references; never reuse their copy, images, fonts, 3D models or
 shader code; change palette and typography; keep only principles, rhythms and measured motion values.

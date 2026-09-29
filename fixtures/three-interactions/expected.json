@@ -10,5 +10,6 @@
     { "effect_type": "accordion", "trigger": "click", "source": "measured:toggle" },
     { "effect_type": "press-hold", "trigger": "press", "source": "measured:press" }
   ],
-  "tier": "B"
+  "tier": "B",
+  "customGeometry": ["gem"]
 }

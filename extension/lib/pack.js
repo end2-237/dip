@@ -2,6 +2,8 @@
 import { zip, base64ToBytes } from './zip.js';
 import { EFFECT_TYPES } from './taxonomy.js';
 import { COMMANDS } from './commands.js';
+import { geometryToGlb } from './glb.js';
+import { sectionFor } from './analyzer.js';
 
 export const SCHEMA_VERSION = 1;
 export const DIP_VERSION = '0.1.0';
@@ -76,8 +78,9 @@ These rules are part of the DIP Reproduction Pack contract. Follow them strictly
    and fix until the threshold in \`verify/dip.verify.json\` is reached.
 6. When an effect is marked \`source: "vision"\` or \`confidence < 0.6\`, implement the simplest
    solution that passes the threshold, and record it in \`NOTES.md\`.
-7. Write original code. Never embed files from \`webgl/*.glsl\` nor study-mode assets
-   (\`assets/files/\`) in a deliverable meant to be published: re-implement from the cards.
+7. Write original code. Never embed files from \`webgl/*.glsl\`, \`webgl/geometry/*.glb\` nor study-mode assets
+   (\`assets/files/\`) in a deliverable meant to be published: re-implement from the cards and follow
+   \`ASSETS.md\` to produce original images, fonts and 3D objects.
 8. Always handle \`prefers-reduced-motion: reduce\` (disable or shorten non-essential motion).
 9. End of mission: \`npx dip-verify --pack . --all\` ; global score ≥ 0.90 ; attach the report.
 `;
@@ -493,6 +496,7 @@ function buildPlanMd(analysis, effects, stack) {
   o.push('');
   step('Design DNA', 'Before building, read `.claude/commands/dip-dna.md` and follow it: write `DESIGN_DNA.md` and `dna.json` at the pack root (art direction, composition, typography, colour, 3D, motion personality, copy tone, signature moments). Every later step must stay consistent with it.', '`DESIGN_DNA.md` and `dna.json` exist and only cite measured values.');
   step('Project setup', `Create a ${stack.framework} project. Install: ${stack.libraries.map((l) => '`' + l.package + '@' + l.version + '`').join(', ') || 'no extra library'}. Add \`NOTES.md\`.`, 'the dev server runs and shows an empty page.');
+  step('Assets', 'Read `ASSETS.md`. For a clone kept private (study), you may use `assets/files/` and `webgl/geometry/`. For any deliverable, produce originals: images with `dip-assets image` or free stock, 3D objects rebuilt in code or with `dip-assets model`, then `dip-assets optimize`. Keep the same sizes, framing and roles.', 'every image / model slot of `ASSETS.md` has a file (placeholder allowed until the section is built).');
   step('Design tokens & fonts', 'Copy `design/tokens.css` into the global stylesheet. Load the fonts listed in `design/typography.md` (study mode: files in `assets/files/`; otherwise free equivalents). Implement the type scale with the clamp() formulas.', 'body text renders with the right family, size and colour; `npx dip-verify --pack . --tokens` ≥ 0.95.');
   step('Global layout & grid', 'Implement the grid of `design/grid.md` (margins, columns, gutters per breakpoint) and the page wrapper.', 'container widths match at 1440/1024/390.');
   step('Scroll system', `Implement the scroll system described in \`motion/scroll-system.json\` (${analysis.scroll.type}${analysis.scroll.measuredLerp ? `, lerp ${analysis.scroll.measuredLerp}` : ''}${analysis.scroll.options ? ', options ' + JSON.stringify(analysis.scroll.options) : ''}). Wire it to ScrollTrigger if GSAP is used (\`lenis.on('scroll', ScrollTrigger.update)\`).`, 'wheel scrolling feels identical (settle time within ±10%).');
@@ -599,6 +603,107 @@ function placeholderSvg(w, h, label) {
 }
 
 // ------------------------------------------------------------------ main
+// Asset substitution plan: what every image / video / font / 3D object becomes in a deliverable (spec: nothing
+// from the original site ships; the plan tells the agent how to produce an original equivalent).
+function geomFile(g, i) {
+  return `webgl/geometry/${String(i + 1).padStart(2, '0')}-${(g.name || 'mesh').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)}.glb`;
+}
+function assetsMd(cap, analysis, mode) {
+  const a = cap.assets || {};
+  const secs = analysis.sections || [];
+  const o = ['# ASSETS — substitution plan', ''];
+  o.push('Nothing from the original site ships in a deliverable. For each asset below: keep the **role, size, framing and mood**, produce an **original** equivalent.');
+  o.push('');
+  o.push('Tools (pay per use, no subscription — see `dip-assets --help` in the DIP repo):');
+  o.push('- Image: `node <DIP>/cli/dip-assets.js image --prompt "<prompt>" --size <W>x<H> --out public/img/<name>.webp` (fal.ai, needs `FAL_KEY`), or a free photo (Unsplash / Pexels).');
+  o.push('- 3D model: `node <DIP>/cli/dip-assets.js model --prompt "<prompt>" --out public/models/<name>.glb` (text → image → 3D), or `--image <file>` (image → 3D). Free alternative: TRELLIS.2 on Hugging Face, Poly Haven / Kenney (CC0).');
+  o.push('- Optimise every model and image before use: `node <DIP>/cli/dip-assets.js optimize <file>` (glb → draco + webp textures, images → webp).');
+  o.push('- Prompts must follow `DESIGN_DNA.md` (palette, light, materials, mood). Never name the original brand or copy its logo.');
+  o.push('');
+
+  const imgs = (a.images || []).filter((i) => i.displayed && i.displayed[0] >= 40 && i.displayed[1] >= 40);
+  if (imgs.length) {
+    o.push('## Images');
+    o.push('');
+    o.push('| # | Section | Displayed | Natural | Alt / role | Study file | Deliverable |');
+    o.push('|---|---|---|---|---|---|---|');
+    imgs.slice(0, 80).forEach((img, i) => {
+      const role = img.displayed[0] >= 1000 ? 'full-bleed / hero visual' : img.displayed[0] >= 400 ? 'feature visual' : 'thumbnail / icon';
+      const file = mode === 'study' ? Object.keys(cap.assetFiles || {}).find((f) => img.url && f.endsWith((img.url.split('?')[0].split('/').pop() || '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80))) : null;
+      const gen = img.displayed[0] >= 400 ? `generate ${Math.min(2048, img.natural[0] || img.displayed[0] * 2)}×${Math.min(2048, img.natural[1] || img.displayed[1] * 2)} (fal.ai) or stock` : 'stock / SVG icon';
+      o.push(`| ${i + 1} | ${sectionFor(secs, img.y) || '—'} | ${img.displayed.join('×')} | ${(img.natural || []).join('×')} | ${mode === 'share' ? '—' : (img.alt || '').replace(/\|/g, '/').slice(0, 50) || role} | ${file ? '`' + file + '`' : '—'} | ${gen}, ${img.objectFit || 'fill'} |`);
+    });
+    o.push('');
+  }
+  if ((a.videos || []).length) {
+    o.push('## Videos');
+    o.push('');
+    for (const v of a.videos.slice(0, 20)) o.push(`- ${v.selector || 'video'} ${v.displayed ? v.displayed.join('×') : ''}${v.loop ? ' loop' : ''}${v.autoplay ? ' autoplay' : ''}${v.muted ? ' muted' : ''} → original footage, a stock clip, or a WebGL / CSS equivalent; keep the poster frame.`);
+    o.push('');
+  }
+  if ((a.fonts || []).length) {
+    o.push('## Fonts');
+    o.push('');
+    o.push('Commercial fonts need a licence for a deliverable. Otherwise use the closest free family (Google Fonts / Fontshare) with the same metrics — see `design/typography.md`.');
+    o.push('');
+    for (const f of a.fonts.slice(0, 20)) o.push(`- ${f.family || ''} ${f.weight || ''} ${f.style || ''} — ${mode === 'share' ? '' : f.url || ''}`);
+    o.push('');
+  }
+
+  const s = analysis.webgl.sceneSummary;
+  const geo = cap.threeGeometry || [];
+  if (s || geo.length || (a.models || []).length) {
+    o.push('## 3D objects');
+    o.push('');
+    o.push('Keep the **staging** exactly (camera, framing, light, motion: `webgl/three-scene.md`, `motion/effects/`); replace the **objects** with originals.');
+    o.push('');
+    const params = new Map(); // identical geometry + material → one line with its instances
+    for (const sc of (analysis.webgl.three && analysis.webgl.three.scenes) || [])
+      for (const ob of sc.objects || []) {
+        if (!ob.geometry || !ob.geometry.parameters || ob.geometry.type === 'BufferGeometry') continue;
+        const m = (ob.materials || [])[0];
+        const ctor = `new THREE.${ob.geometry.type}(${Object.values(ob.geometry.parameters || {}).map((v) => JSON.stringify(v)).join(', ')})`;
+        const key = ctor + (m ? m.type + m.color : '');
+        if (!params.has(key)) {
+          if (params.size >= 30) continue;
+          params.set(key, { ctor, m, names: new Set(), positions: [] });
+        }
+        const p = params.get(key);
+        if (ob.name && !/^(Mesh|Object)/.test(ob.name)) p.names.add(ob.name);
+        p.positions.push(ob.position);
+      }
+    if (params.size) {
+      o.push('### Parametric (rebuild exactly in code — no asset needed)');
+      o.push('');
+      for (const p of params.values()) o.push(`- ${p.names.size ? '`' + [...p.names].join('`, `') + '`: ' : ''}\`${p.ctor}\`, material ${p.m ? p.m.type + ' ' + (p.m.color || '') : '?'}${p.positions.length > 1 ? `, ×${p.positions.length} at ${p.positions.slice(0, 8).map((x) => JSON.stringify(x)).join(' ')}${p.positions.length > 8 ? ' …' : ''}` : `, position ${JSON.stringify(p.positions[0])}`}`);
+      o.push('');
+    }
+    if (geo.length) {
+      o.push('### Custom geometry (captured vertex data)');
+      o.push('');
+      if (mode === 'study') o.push('Study copies in `webgl/geometry/*.glb` (open in Blender or https://gltf-viewer.donmccurdy.com). They are the original site\'s work: **reference only, never ship them**.');
+      o.push('');
+      o.push('| Object | Vertices | Triangles | Size (x × y × z) | Material | Study file | Deliverable |');
+      o.push('|---|---|---|---|---|---|---|');
+      geo.forEach((g, i) => {
+        const size = g.max.map((mx, k) => +(mx - g.min[k]).toFixed(2)).join(' × ');
+        const kind = g.mode === 0 ? 'point cloud → sample points on an original mesh / procedural distribution' : g.vertices < 2000 ? 'simple shape → model it procedurally (extrude / lathe / merge primitives)' : 'model → generate (dip-assets model) or CC0 library, then normalise to the same size';
+        o.push(`| ${g.name || g.objectType} | ${g.vertices} | ${Math.round(g.triangles)} | ${size} | ${g.material ? `${g.material.type} ${g.material.color || ''}${g.material.shader ? ' (shader)' : ''}` : '?'} | ${mode === 'study' ? '`' + geomFile(g, i) + '`' : '—'} | ${kind} |`);
+      });
+      o.push('');
+      o.push('Normalise any replacement model to the bounding size above (centre it, scale it) so the camera framing and the motion keyframes stay valid.');
+      o.push('');
+    }
+    if ((a.models || []).length) {
+      o.push('### Loaded model files');
+      o.push('');
+      for (const m of a.models) o.push(`- ${mode === 'share' ? 'model' : m.url} (${m.bytes ? Math.round(m.bytes / 1024) + ' KB' : '?'}${m.draco ? ', Draco' : ''}) → original model of the same role; keep under 2 MB (Draco + webp textures).`);
+      o.push('');
+    }
+  }
+  return o.join('\n');
+}
+
 /**
  * @param {object} cap raw capture
  * @param {object} analysis output of analyze()
@@ -713,6 +818,15 @@ export async function buildPackFiles(cap, analysis, opts) {
     files: Object.keys(cap.assetFiles || {}),
   };
   add('assets/manifest.json', J(assetManifest));
+  add('ASSETS.md', assetsMd(cap, analysis, mode));
+  if (mode === 'study')
+    (cap.threeGeometry || []).forEach((g, i) => {
+      try {
+        add(geomFile(g, i), geometryToGlb(g));
+      } catch (e) {
+        /* malformed geometry: skip */
+      }
+    });
   if (mode === 'study') for (const [p, b64] of Object.entries(cap.assetFiles || {})) add(p, base64ToBytes(b64));
   else (assets.images || []).slice(0, 150).forEach((img, i) => add(`assets/placeholders/img-${String(i + 1).padStart(3, '0')}.svg`, placeholderSvg(img.natural[0] || img.displayed[0], img.natural[1] || img.displayed[1], 'image')));
 
@@ -774,7 +888,7 @@ export async function buildPackFiles(cap, analysis, opts) {
   add('perf.json', J({ ...(cap.perf || {}), drawCalls: analysis.webgl.drawCalls, gpu: analysis.webgl.gpu }));
   add('raw/scan-log.json', J(cap.log || []));
   if (opts.includeRaw !== false && mode === 'study') {
-    const { screenshots, assetFiles, ...raw } = cap;
+    const { screenshots, assetFiles, threeGeometry, ...raw } = cap;
     add('raw/capture.json', JSON.stringify(raw));
     add('raw/analysis.json', J({ ...analysis, webgl: { ...analysis.webgl, cards: analysis.webgl.cards.map(({ vertex, fragment, uniformSamples, ...c }) => c) } }));
   }

@@ -529,6 +529,22 @@
       threeSample(tk, o, t, s);
     });
   }
+  // main scene = the largest one rendered (node count cached 2 s); full-screen post passes render 1–2 node scenes.
+  // (A scene may hold everything under one root group, so direct children are not a reliable size.)
+  const sceneSize = new WeakMap();
+  let maxSceneSize = 0;
+  function isMainScene(scene) {
+    const tNow = now();
+    let c = sceneSize.get(scene);
+    if (!c || tNow - c.t > 2000) {
+      let n = 0;
+      scene.traverse(() => n++);
+      c = { n, t: tNow };
+      sceneSize.set(scene, c);
+      if (n > maxSceneSize) maxSceneSize = n;
+    }
+    return c.n >= 3 && c.n >= maxSceneSize * 0.5;
+  }
   (function threeHook() {
     try {
       if (W.__THREE_DEVTOOLS__) return;
@@ -549,7 +565,7 @@
                   if (camera) three.cameraOf.set(scene, camera);
                   // sample only the main scene (full-screen post passes render tiny scenes)
                   try {
-                    if (rec.on && scene.children && scene.children.length > 2) sampleThree(scene, camera);
+                    if (rec.on && isMainScene(scene)) sampleThree(scene, camera);
                   } catch (err) {
                     /* never break rendering */
                   }
@@ -2510,6 +2526,80 @@
     return out;
   }
 
+  // ================================================================ Three.js geometry export (study mode)
+  // Custom geometries (built in code or loaded from glTF) cannot be rebuilt from parameters: export their
+  // vertex data so the pack can ship them as .glb for study. Built-in parametric geometries are skipped.
+  function b64Of(arr) {
+    const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+  function attrArray(a, size) {
+    if (!a) return null;
+    const n = a.count;
+    const out = new Float32Array(n * size);
+    for (let i = 0; i < n; i++) {
+      out[i * size] = a.getX(i);
+      if (size > 1) out[i * size + 1] = a.getY(i);
+      if (size > 2) out[i * size + 2] = a.getZ(i);
+    }
+    return out;
+  }
+  function threeGeometries(maxVerts, maxBytes) {
+    const out = [];
+    const seen = new Set();
+    let total = 0;
+    maxVerts = maxVerts || 80000;
+    maxBytes = maxBytes || 6e6;
+    try {
+      for (const scene of three.scenes) {
+        scene.traverse((obj) => {
+          if (!(obj.isMesh || obj.isPoints || obj.isLine) || !obj.geometry) return;
+          const g = obj.geometry;
+          const pos = g.attributes && g.attributes.position;
+          if (!pos || seen.has(g.uuid || g)) return;
+          seen.add(g.uuid || g);
+          if (g.parameters && g.type !== 'BufferGeometry') return; // parametric: rebuilt from its parameters
+          if (pos.count < 4 || pos.count > maxVerts || pos.itemSize < 2) return;
+          const position = attrArray(pos, 3);
+          const normal = g.attributes.normal ? attrArray(g.attributes.normal, 3) : null;
+          const uv = g.attributes.uv ? attrArray(g.attributes.uv, 2) : null;
+          let index = null;
+          if (g.index && g.index.count) {
+            index = new Uint32Array(g.index.count);
+            for (let i = 0; i < g.index.count; i++) index[i] = g.index.getX(i);
+          }
+          const bytes = position.byteLength + (normal ? normal.byteLength : 0) + (uv ? uv.byteLength : 0) + (index ? index.byteLength : 0);
+          if (total + bytes > maxBytes) return;
+          total += bytes;
+          const m = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+          let min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+          for (let i = 0; i < position.length; i += 3) for (let k = 0; k < 3; k++) {
+            if (position[i + k] < min[k]) min[k] = position[i + k];
+            if (position[i + k] > max[k]) max[k] = position[i + k];
+          }
+          out.push({
+            name: obj.name || (obj.parent && obj.parent.name) || null,
+            objectType: obj.type,
+            mode: obj.isPoints ? 0 : obj.isLine ? 1 : 4,
+            vertices: pos.count,
+            triangles: index ? index.length / 3 : pos.count / 3,
+            min, max,
+            material: m ? { type: m.type, color: m.color && m.color.getHexString ? '#' + m.color.getHexString() : null, roughness: m.roughness, metalness: m.metalness, emissive: m.emissive && m.emissive.getHexString ? '#' + m.emissive.getHexString() : null, opacity: m.opacity, transparent: m.transparent, shader: !!(m.isShaderMaterial || m.isRawShaderMaterial) } : null,
+            position: b64Of(position),
+            normal: normal ? b64Of(normal) : null,
+            uv: uv ? b64Of(uv) : null,
+            index: index ? b64Of(index) : null,
+          });
+        });
+      }
+    } catch (e) {
+      journal.error('three-geometry', e);
+    }
+    return out;
+  }
+
   // ================================================================ Lottie (lottie-web registry)
   function lottieState() {
     const out = [];
@@ -2768,6 +2858,7 @@
     detectStack,
     gsapState,
     threeState,
+    threeGeometries,
     glState,
     fetchBase64,
     threeMotion: () => [...three.tracks.values()].filter((tk) => tk.t.length > 2).map(({ last, ...tk }) => tk),

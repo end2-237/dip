@@ -98,6 +98,11 @@ async function main() {
     }
     await driver.call('waitStable', 700, 8000).catch(() => {});
     await driver.call('handleConsent', 'none').catch(() => {});
+    if (res.fps == null) {
+      // time-based metrics are only meaningful when the page renders smoothly
+      res.fps = await driver.evaluate('new Promise((r) => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 1000) requestAnimationFrame(f); else r(Math.round(n * 1000 / (performance.now() - t0))); }; requestAnimationFrame(f); })').catch(() => null);
+      if (res.fps != null && res.fps < 30) issue('machine', `only ${res.fps} fps while verifying: close other GPU-heavy apps (games, video, other browsers) and re-run; motion and 3D scores are unreliable below 30 fps`, 0.5);
+    }
   };
 
   const sections = cfg.sections.filter((s) => !onlySection || s.id === onlySection);
@@ -132,13 +137,14 @@ async function main() {
           if (e.trigger === 'mouse-move' || /cursor/.test(e.effectType || '')) continue; // position depends on the pointer
           const fixed = await driver.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(e.anchor)}); return !!el && getComputedStyle(el).position === 'fixed'; })()`).catch(() => false);
           if (fixed) continue;
+          if (e.rect.w < 2 || e.rect.h < 2) continue; // invisible in the reference (0-size rect): IoU is meaningless
           const er = await driver.call('layoutOf', e.anchor).catch(() => null);
           if (!er || !secLayout) continue;
           ious.push(iou({ x: er.x, y: er.y - secLayout.y, w: er.w, h: er.h }, { x: e.rect.x, y: e.rect.y - (s.top || 0), w: e.rect.w, h: e.rect.h }));
         }
+        if (ious.length) anchorScore = ious.reduce((a, b) => a + b, 0) / ious.length;
         r.layoutDetail = r.layoutDetail || {};
         r.layoutDetail[bp] = { height: r2(hScore), top: r2(tScore), anchors: r2(anchorScore) };
-        if (ious.length) anchorScore = ious.reduce((a, b) => a + b, 0) / ious.length;
         r.layout[bp] = r2(0.5 * hScore + 0.2 * tScore + 0.3 * anchorScore);
         if (refH && Math.abs(rect.abs.h - refH) / refH > 0.08) r.notes.push(`@${bp}: section height ${Math.round(rect.abs.h)}px, expected ${refH}px`);
         // visual
@@ -275,7 +281,7 @@ async function verifyTimed(driver, page, e, packDir) {
     await sleep(100);
   }
   await page.bringToFront();
-  const motionMs = ((e.duration || 1) + (e.delay || 0) + (e.stagger || 0) * 10) * 1000;
+  const motionMs = Math.min(15000, ((e.duration || 1) + (e.delay || 0) + Math.min(e.stagger || 0, 1.5) * 10) * 1000);
   if (e.trigger === 'scroll-enter') {
     // progressive scroll like a user (scroll-direction triggers need movement, not a jump), then a little back up
     const r = await driver.call('rectOf', e.anchor);

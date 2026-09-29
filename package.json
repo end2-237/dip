@@ -1,19 +1,23 @@
 {
   "name": "dip",
   "version": "0.1.0",
-  "description": "DIP — Design Intelligence Pipeline: Chrome extension + CLI that dissect creative websites into a Reproduction Pack for coding agents.",
+  "description": "DIP \u2014 Design Intelligence Pipeline: Chrome extension + CLI that dissect creative websites into a Reproduction Pack for coding agents.",
   "type": "module",
   "private": true,
   "bin": {
     "dip-capture": "cli/dip-capture.js",
-    "dip-verify": "cli/dip-verify.js"
+    "dip-verify": "cli/dip-verify.js",
+    "dip-assets": "cli/dip-assets.js",
+    "dip-library": "cli/dip-library.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",
     "capture": "node cli/dip-capture.js",
     "verify": "node cli/dip-verify.js",
     "serve:fixtures": "node -e \"import('./cli/lib/serve.js').then(m=>m.serve('fixtures',5555)).then(s=>console.log(s.url))\"",
-    "package:extension": "node scripts/package-extension.js"
+    "package:extension": "node scripts/package-extension.js",
+    "assets": "node cli/dip-assets.js",
+    "library": "node cli/dip-library.js"
   },
   "engines": {
     "node": ">=20"

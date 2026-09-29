@@ -89,6 +89,39 @@ node cli/dip-capture.js --urls urls.txt          # lot, un site à la fois
 node cli/dip-capture.js https://exemple.com --mode share --headless
 ```
 
+## Créer : bibliothèque, commandes Claude Code, images et 3D
+
+**Bibliothèque** — la mémoire du studio : chaque site scanné devient une référence (ADN, palettes, typos,
+animations mesurées classées par besoin).
+
+```bash
+node cli/dip-library.js add D:\DIP-Clone\dip-pack_site.zip --lib D:\DIP-Library   # dossier ou .zip
+node cli/dip-library.js search premium --effect text-reveal-lines --lib D:\DIP-Library
+```
+Le dossier contient `LIBRARY.md` (tous les sites), `EFFECTS.md` (animations mesurées par type) et les
+commandes Claude Code. Ouvre Claude Code dans ce dossier (abonnement Claude, pas d'API) :
+
+| Commande | Rôle |
+|---|---|
+| `/dip-dna` (dans un pack) | écrit `DESIGN_DNA.md` + `dna.json` : l'essence du site |
+| `/dip-create <brief>` | concept original + pack de production à partir de la bibliothèque |
+| `/dip-transform <pack client> <packs référence>` | transforme un site ordinaire en projet premium |
+| `/dip-clone <url>` | boucle complète : capture → ADN → construction → vérification (3 essais max / section) |
+
+**Images et objets 3D originaux** (fal.ai, paiement à l'usage, sans abonnement ; clé dans une variable
+d'environnement, jamais dans un fichier ni dans un chat) :
+
+```powershell
+$env:FAL_KEY="<ta clé fal.ai>"
+node cli/dip-assets.js image --prompt "..." --size 1600x900 --out public/img/hero.webp
+node cli/dip-assets.js model --prompt "a glossy red apple" --out public/models/apple.glb   # texte → image → 3D (TRELLIS)
+node cli/dip-assets.js model --image photo.png --engine rodin --out public/models/obj.glb
+node cli/dip-assets.js optimize public/models/apple.glb          # Draco + textures webp (gratuit, local)
+```
+Chaque pack contient `ASSETS.md` : pour chaque image, vidéo, police et objet 3D du site, son rôle, sa taille
+et comment produire un équivalent original (formes 3D paramétriques à reconstruire en code, géométries
+sur mesure exportées en `.glb` d'étude dans `webgl/geometry/`).
+
 ## Développement
 
 ```bash
@@ -108,7 +141,7 @@ npm run package:extension        # crée dist/dip-extension-0.1.0.zip (partage /
 - Pas encore de clips vidéo WebM (intro, survols) : les références sont des captures PNG.
 - Les effets non expliqués par une trace (« unexplained », détection par diff d'images) et la sélection
   d'une zone en mode manuel sont prévus dans une version suivante.
-- La web app (phase 2 : bibliothèque, partage, recherche) n'est pas encore construite.
+- La bibliothèque est locale (dossier + index) ; la web app de partage n'est pas encore construite.
 
 ## Éthique
 

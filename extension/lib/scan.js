@@ -443,6 +443,7 @@ export async function runScan(driver, meta, options, onProgress) {
           });
           // restore the initial state
           if (changed && tg.kind !== 'tab') {
+            cap.toggles[cap.toggles.length - 1].closeT = await call('mark', 'toggle-close');
             const again = await call('rectOf', tg.nid);
             if (again && again.w > 0 && again.y >= 0 && again.y < vh) await driver.mouseClick(again.x + again.w / 2, again.y + again.h / 2);
             else if (driver.key) await driver.key('Escape');
@@ -522,6 +523,8 @@ async function finalize(driver, cap, o, call, step, progress, log) {
   cap.webgl = (await step('webgl', 10000, () => call('glState'))) || {};
   cap.three = (await step('three', 10000, () => call('threeState'))) || {};
   cap.lottie = (await step('lottie', 5000, () => call('lottieState'))) || [];
+  // custom 3D geometry (study mode only: vertex data of the original site is never shared)
+  if (o.exportMode !== 'share' && cap.three.scenes && cap.three.scenes.length) cap.threeGeometry = (await step('three-geometry', 15000, () => call('threeGeometries', 80000, 6e6))) || [];
   cap.assets = (await step('assets', 15000, () => call('getAssets'))) || {};
   cap.perf = (await step('perf', 5000, () => call('getPerf'))) || {};
   cap.errors = cap.motion.errors || [];

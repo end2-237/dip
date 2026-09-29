@@ -41,6 +41,7 @@ for (const fx of ['gsap-lenis', 'css-only', 'webgl-shader', 'three-interactions'
       for (const [u, drv] of Object.entries(w.uniforms)) assert.equal(card.uniforms.find((x) => x.name === u).drivenBy, drv);
     }
     if (expected.tier) assert.equal(analysis.tier.tier, expected.tier);
+    for (const name of expected.customGeometry || []) assert.ok((cap.threeGeometry || []).some((g) => g.name === name && g.position), `custom geometry ${name} exported`);
     // probe overhead budget (spec §17.1): < 5% of a 16.7ms frame at p95
     assert.ok(cap.perf.probeOverhead.p95 < 0.84, `probe overhead p95 ${cap.perf.probeOverhead.p95}ms`);
   });
