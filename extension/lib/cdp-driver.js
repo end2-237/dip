@@ -44,6 +44,8 @@ export class CdpDriver {
   async setViewport(w, h) {
     this.viewport = { w, h };
     await this.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: w < 600, screenWidth: w, screenHeight: h });
+    // references must not depend on the OS scrollbar width (15px on Windows): layout at the full breakpoint width
+    await this.send('Emulation.setScrollbarsHidden', { hidden: true }).catch(() => {});
   }
 
   async reload() {

@@ -68,6 +68,7 @@ These rules are part of the DIP Reproduction Pack contract. Follow them strictly
 4. Mark up the clone so it can be verified:
    - every section root gets \`data-dip-section="<section id>"\` (ids in \`structure/sections.json\`);
    - the main target of every effect gets \`data-dip-effect="<effect id>"\` (ids in \`motion/effects/\`);
+     when one element carries several effects, list them separated by spaces: \`data-dip-effect="e02 e09"\`;
    - key anchors (main title, main media, CTA) of each section get \`data-dip-anchor="<name>"\` when listed in \`verify/dip.verify.json\`.
 5. Build section by section. After each section run:
        npx dip-verify --pack . --section <id>
@@ -625,7 +626,7 @@ export async function buildPackFiles(cap, analysis, opts) {
   add('motion/timeline-intro.json', J({ stabilizedAfterMs: analysis.intro && analysis.intro.ms, preloader: analysis.intro && analysis.intro.preloader, effects: intro.map((e) => ({ id: e.id, t: e.t, duration: e.animation && e.animation.duration, delay: e.animation && e.animation.delay, targets: (e.targets || []).map((t) => t.selector) })).sort((a, b) => a.t - b.t) }));
   for (const e of effects) {
     const { curve, shots: _s, llm, t, ...card } = e;
-    const json = { ...card, t_ms: t, reduced_motion: analysis.reducedMotion ? 'handled by the site' : 'not handled by the site: the agent must add a fallback', verify: { anchor: `[data-dip-effect="${e.id}"]`, metric: e.trigger === 'scroll-scrub' ? 'scroll-curve-rms' : e.trigger === 'hover' ? 'hover-style' : 'motion-rms', threshold: e.confidence < 0.6 ? 0.12 : 0.05 } };
+    const json = { ...card, t_ms: t, reduced_motion: analysis.reducedMotion ? 'handled by the site' : 'not handled by the site: the agent must add a fallback', verify: { anchor: `[data-dip-effect~="${e.id}"]`, metric: e.trigger === 'scroll-scrub' ? 'scroll-curve-rms' : e.trigger === 'hover' ? 'hover-style' : 'motion-rms', threshold: e.confidence < 0.6 ? 0.12 : 0.05 } };
     if (llm) json.description = llm.summary;
     add(`motion/effects/${e.id}.json`, J(json));
     add(`motion/effects/${e.id}.md`, effectMd(e, analysis));
@@ -682,8 +683,11 @@ export async function buildPackFiles(cap, analysis, opts) {
       .map((e) => ({
         id: e.id,
         section: e.section,
-        anchor: `[data-dip-effect="${e.id}"]`,
+        anchor: `[data-dip-effect~="${e.id}"]`,
         trigger: e.trigger,
+        effectType: e.effect_type,
+        startMs: e.t != null ? Math.round(e.t) : null,
+        startScroll: e.startScroll != null ? e.startScroll : null,
         metric: e.trigger === 'scroll-scrub' ? 'scroll-curve-rms' : e.trigger === 'hover' ? 'hover-style' : e.trigger === 'time-loop' ? 'loop-speed' : 'motion-rms',
         threshold: e.confidence < 0.6 ? 0.12 : 0.05,
         duration: e.animation && typeof e.animation.duration === 'number' ? e.animation.duration : null,
@@ -696,6 +700,7 @@ export async function buildPackFiles(cap, analysis, opts) {
         hoverChanges: e.trigger === 'hover' && e.animation && e.animation.changes ? e.animation.changes.slice(0, 12) : undefined,
         frames: e.reference.frames,
         rect: (() => {
+          if (e.trigger === 'mouse-move' || /cursor/.test(e.effect_type)) return null;
           const t0 = (e.targets || []).find((t) => t.nid && cap.nidRects && cap.nidRects[t.nid]) || (e.targets || [])[0];
           return (t0 && ((cap.nidRects && cap.nidRects[t0.nid]) || t0.rect)) || null;
         })(),

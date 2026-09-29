@@ -376,6 +376,7 @@ async function finalize(driver, cap, o, call, step, progress, log) {
     for (const st of g.scrollTriggers || []) if (st.triggerNid) ids.add(st.triggerNid);
     for (const c of g.scrollTriggerCreates || []) if (c.vars && c.vars.trigger && c.vars.trigger.nid) ids.add(c.vars.trigger.nid);
     for (const c of g.calls || []) { const tr = c.vars && c.vars.scrollTrigger && c.vars.scrollTrigger.trigger; if (tr && tr.nid) ids.add(tr.nid); }
+    for (const t of ((cap.motion.recorder || {}).tracks || [])) if (t.nid) ids.add(t.nid);
     await call('scrollToY', 0, 200);
     cap.nidRects = await call('rectsFor', [...ids].slice(0, 3000));
   });

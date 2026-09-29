@@ -181,6 +181,7 @@ function gsapEffects(cap, ctx) {
       scrollTrigger: st,
       animation: { timeline: { repeat: tl.vars.repeat || 0, yoyo: !!tl.vars.yoyo, delay: tl.vars.delay || 0, defaults: tl.vars.defaults || null }, steps, duration: r3(steps.reduce((a, s) => a + (s.duration || 0), 0)) },
       t: tl.t,
+      startScroll: tl.steps[0] ? tl.steps[0].s : null,
       gsapId: id,
     });
   }
@@ -204,6 +205,7 @@ function gsapEffects(cap, ctx) {
       scrollTrigger: st,
       animation: anim,
       t: c0.t,
+      startScroll: c0.s,
     });
   }
   // ScrollTriggers without an animation (toggleClass / callbacks / pins)
@@ -309,6 +311,7 @@ function waapiEffects(cap, ctx) {
         properties: a.props || undefined,
       },
       t: a.t,
+      startScroll: a.s,
     });
   }
   return effects;
@@ -452,6 +455,7 @@ function measureTrack(tk, ctx) {
     const nrm = normalize(ts, vs);
     const fit = fitEase(nrm.x, nrm.y);
     m.start = ts[0];
+    m.startScroll = tk.s[seg.start];
     m.duration = r3((ts[ts.length - 1] - ts[0]) / 1000);
     m.phase = phaseKind(phaseAt(ctx.marks, ts[0]));
     m.fit = fit;
@@ -615,6 +619,7 @@ function recorderEffects(cap, ctx, explainedNids) {
       measured: list.slice(0, 12).map((x) => ({ selector: x.selector, start: x.start, duration: x.duration, values: x.values })),
       curve: m0.curve,
       t: m0.start || 0,
+      startScroll: m0.startScroll != null ? m0.startScroll : null,
       _m: list,
     });
   }
@@ -1084,6 +1089,7 @@ export function analyze(cap) {
         const exact = e.trigger !== 'scroll-scrub' && e.animation && typeof e.animation.ease === 'string' && !e.animation.steps;
         e.curve = exact ? sampleEase(e.animation.ease, 40) : m.curve;
         e.curveSource = exact ? 'ease-function' : 'recorder';
+        if (m.startScroll != null) e.startScroll = m.startScroll; // when the motion really started (not when the code ran)
         e.measuredCheck = { driver: m.driver, duration: m.duration, fit: m.fit ? { best: m.fit.best, rms: m.fit.rms } : null, scrollStart: m.scrollStart, scrollEnd: m.scrollEnd, pxPerScrollPx: m.ratio };
       }
     } catch (err) {
@@ -1130,10 +1136,12 @@ export function analyze(cap) {
     e.effect_type = classify(e, ctx);
     const t0 = (e.targets || [])[0];
     let y = null;
-    if (e._m && e._m[0] && e._m[0].rect0) y = e._m[0].rect0.y;
+    // untransformed layout position (measured at the end, scroll 0) first: rects taken while elements were
+    // animating or pinned can land in another section
+    if (t0 && t0.nid && cap.nidRects && cap.nidRects[t0.nid]) y = cap.nidRects[t0.nid].y;
+    else if (e._m && e._m[0] && e._m[0].rect0) y = e._m[0].rect0.y;
     else if (t0 && t0.nid && tracksByNid.get(t0.nid) && tracksByNid.get(t0.nid).rect0) y = tracksByNid.get(t0.nid).rect0.y;
     else if (e._kind === 'hover' && t0 && t0.rect) y = t0.rect.y;
-    else if (t0 && t0.nid && cap.nidRects && cap.nidRects[t0.nid]) y = cap.nidRects[t0.nid].y;
     if (e.scrollTrigger && e.scrollTrigger.triggerNid && cap.nidRects && cap.nidRects[e.scrollTrigger.triggerNid]) y = cap.nidRects[e.scrollTrigger.triggerNid].y;
     e.section = e.effect_type === 'custom-cursor' || e.effect_type === 'page-transition' ? 'global' : sectionFor(sections, y);
   }

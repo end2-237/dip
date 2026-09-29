@@ -18,7 +18,7 @@ export async function launchBrowser(opts) {
   const pw = await loadPlaywright();
   const launch = {
     headless: !!opts.headless,
-    args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--hide-scrollbars'],
+    args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--hide-scrollbars', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
   };
   if (process.env.DIP_CHROMIUM) launch.executablePath = process.env.DIP_CHROMIUM;
   else if (fs.existsSync('/opt/pw-browsers/chromium')) {

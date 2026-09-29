@@ -76,8 +76,12 @@ async function main() {
   const cdp = await context.newCDPSession(page);
   const driver = new CdpDriver((m, p) => cdp.send(m, p));
   await driver.init(PROBES);
-  const helper = await context.newPage(); // image maths
+  // image maths run in a separate context/window: a second tab would push the tested page to the background,
+  // where Chrome pauses requestAnimationFrame and the motion recorder measures nothing
+  const helperCtx = await browser.newContext();
+  const helper = await helperCtx.newPage();
   await helper.goto('about:blank');
+  await page.bringToFront();
 
   const res = { url, pack: packDir, iteration, date: new Date().toISOString(), breakpoints: {}, sections: {}, effects: {}, tokens: null, issues: [] };
   const issue = (scope, msg, gain) => res.issues.push({ scope, msg, gain: gain || 0 });
@@ -125,6 +129,9 @@ async function main() {
         const ious = [];
         const secLayout = await driver.call('layoutOf', s.anchor).catch(() => null);
         for (const e of anchored) {
+          if (e.trigger === 'mouse-move' || /cursor/.test(e.effectType || '')) continue; // position depends on the pointer
+          const fixed = await driver.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(e.anchor)}); return !!el && getComputedStyle(el).position === 'fixed'; })()`).catch(() => false);
+          if (fixed) continue;
           const er = await driver.call('layoutOf', e.anchor).catch(() => null);
           if (!er || !secLayout) continue;
           ious.push(iou({ x: er.x, y: er.y - secLayout.y, w: er.w, h: er.h }, { x: e.rect.x, y: e.rect.y - (s.top || 0), w: e.rect.w, h: e.rect.h }));
@@ -151,7 +158,7 @@ async function main() {
         const clipY = Math.max(0, offset);
         // time-looping effects (marquees…) are not deterministic: masked too
         const maskSel = [...cfg.masks, ...effects.filter((e) => e.trigger === 'time-loop').map((e) => e.anchor)].join(',');
-        const masks = await driver.evaluate(`(() => { const root = document.querySelector(${JSON.stringify(s.anchor)}); if (!root) return []; return [...root.querySelectorAll(${JSON.stringify(maskSel)})].map((m) => m.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0).map((b) => ({ x: b.x, y: b.y - ${clipY}, w: b.width, h: b.height })); })()`);
+        const masks = await driver.evaluate(`(() => { const y0 = ${clipY}, y1 = ${clipY + h}; return [...document.querySelectorAll(${JSON.stringify(maskSel)})].map((m) => m.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0 && b.bottom > y0 && b.top < y1).map((b) => ({ x: b.x, y: b.y - y0, w: b.width, h: b.height })); })()`);
         const cmp = await helper.evaluate(compareInPage, { refB64: fs.readFileSync(refPath).toString('base64'), gotB64: shot, masks, width: 320 });
         r.visual[bp] = r2(cmp.ssim);
         fs.mkdirSync(path.join(diffDir, String(bp)), { recursive: true });
@@ -246,6 +253,7 @@ async function pickTrack(driver, e) {
 }
 
 async function verifyTimed(driver, page, e, packDir) {
+  // e.anchor may carry several ids: data-dip-effect="e02 e09"
   // reload with the anchor watched from the start, then trigger (scroll into view) and record
   await driver.reload();
   await sleep(150);
@@ -254,12 +262,22 @@ async function verifyTimed(driver, page, e, packDir) {
     if (ok) break;
     await sleep(100);
   }
+  await page.bringToFront();
+  const motionMs = ((e.duration || 1) + (e.delay || 0) + (e.stagger || 0) * 10) * 1000;
   if (e.trigger === 'scroll-enter') {
+    // progressive scroll like a user (scroll-direction triggers need movement, not a jump), then a little back up
     const r = await driver.call('rectOf', e.anchor);
     const ping = await driver.call('ping');
-    await driver.call('scrollToY', Math.max(0, r.abs.y - ping.vh * 0.5), 200);
+    // at least until the element sits mid-viewport; further if the capture saw it start later
+    const target = Math.max(e.startScroll || 0, r.abs.y - ping.vh * 0.5, 0) + 200;
+    await driver.call('waitStable', 500, Math.min(8000, (e.startMs || 0) + 1500)).catch(() => {});
+    for (let y = 0; y <= target; y += 120) await driver.call('scrollToY', y, 40);
+    for (let y = target; y >= Math.max(0, target - 480); y -= 120) await driver.call('scrollToY', y, 40);
+    await sleep(motionMs + 1200);
+  } else {
+    // load effects: wait until the capture's start time (intros often wait for a preloader) + the motion itself
+    await sleep(Math.min(20000, (e.startMs || 0) + motionMs + 1500));
   }
-  await sleep(((e.duration || 1) + (e.delay || 0) + (e.stagger || 0) * 10) * 1000 + 1200);
   const { tracks } = await pickTrack(driver, e);
   const ms = tracks.map((t) => measureTrack(t, { marks: [], segmentPick: 'largest' })).filter((m) => m && m.driver === 'time' && m.curve);
   const notes = [];

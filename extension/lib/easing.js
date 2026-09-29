@@ -235,10 +235,16 @@ export function fitEase(xs, ys) {
     const r = rmsAgainst(easeFn(n), xs, ys);
     if (r < best.rms) best = { name: n, rms: r };
   }
+  // too few samples: a free 4-parameter bezier would overfit (e.g. y1 = 2.3); keep the nearest named ease
+  if (xs.length < 8) {
+    const bz0 = bezierFor(best.name) || [0.25, 0.1, 0.25, 1];
+    return { named: best.name, namedRms: round4(best.rms), bezier: bz0, bezierRms: round4(best.rms), best: best.name, rms: round4(best.rms), fewSamples: true };
+  }
   const start = bezierFor(best.name) || [0.25, 0.1, 0.25, 1];
   const obj = (p) => {
     const x1 = Math.min(1, Math.max(0, p[0])), x2 = Math.min(1, Math.max(0, p[2]));
-    const pen = Math.abs(p[0] - x1) + Math.abs(p[2] - x2);
+    // x in [0,1] (CSS rule); y kept within [-0.6, 1.6]: beyond that the fit is chasing noise
+    const pen = Math.abs(p[0] - x1) + Math.abs(p[2] - x2) + Math.max(0, Math.abs(p[1] - 0.5) - 1.1) + Math.max(0, Math.abs(p[3] - 0.5) - 1.1);
     return rmsAgainst(cubicBezier(x1, p[1], x2, p[3]), xs, ys) + pen;
   };
   const nm = nelderMead(obj, start.slice(), 300);
