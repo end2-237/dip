@@ -120,6 +120,7 @@
     return id;
   }
   const HASHED = /(^|[-_])[a-zA-Z0-9]*\d[a-zA-Z0-9]{4,}$|^(css|sc|jsx|svelte|emotion|tw)-|^_[a-zA-Z0-9]{5,}$|__[a-zA-Z0-9-]{5,}$|^[a-z]{1,3}[A-Z0-9][a-zA-Z0-9]{4,}$/;
+  const GENERATED_ID = /^\d|^[a-z]+-\d+$|^:r[0-9a-z]+:$|^radix-|^headlessui-/i;
   function goodClasses(el) {
     const out = [];
     const cl = el.classList || [];
@@ -149,7 +150,7 @@
     try {
       if (el === D.documentElement) sel = 'html';
       else if (el === D.body) sel = 'body';
-      else if (el.id && !HASHED.test(el.id) && isUnique('#' + cssEsc(el.id))) sel = '#' + cssEsc(el.id);
+      else if (el.id && !HASHED.test(el.id) && !GENERATED_ID.test(el.id) && isUnique('#' + cssEsc(el.id))) sel = '#' + cssEsc(el.id);
       else {
         for (const a of el.attributes) {
           if (/^data-(testid|test|section|scroll-section|id|name|component|block|anim|animation|split|module)$/.test(a.name) && a.value && a.value.length < 40) {
@@ -168,7 +169,7 @@
               parts.unshift('body');
               break;
             }
-            if (cur.id && !HASHED.test(cur.id)) {
+            if (cur.id && !HASHED.test(cur.id) && !GENERATED_ID.test(cur.id)) {
               parts.unshift('#' + cssEsc(cur.id));
               break;
             }
@@ -448,7 +449,7 @@
   trapGlobal('ScrollTrigger', instrumentST);
 
   // ================================================================ Three.js devtools hook
-  const three = { scenes: new Set(), renderers: new Set(), lastCamera: null };
+  const three = { scenes: new Set(), renderers: new Set(), lastCamera: null, cameraOf: new WeakMap() };
   (function threeHook() {
     try {
       if (W.__THREE_DEVTOOLS__) return;
@@ -464,7 +465,10 @@
             wrapMethod(o, 'render', (orig) =>
               function (scene, camera) {
                 if (camera) three.lastCamera = camera;
-                if (scene && scene.isScene) three.scenes.add(scene);
+                if (scene && scene.isScene) {
+                  three.scenes.add(scene);
+                  if (camera) three.cameraOf.set(scene, camera);
+                }
                 return orig.apply(this, arguments);
               }
             );
@@ -840,7 +844,8 @@
         mutations.lastActivity = now();
         for (const m of list) {
           mutations.count++;
-          if (m.attributeName !== 'style') mutations.nonStyle++;
+          // stability signal: class / data-* changes only (style writes and DOM churn from tickers are not "settling")
+          if (m.type === 'attributes' && m.attributeName !== 'style') mutations.nonStyle++;
           if (m.type === 'childList') {
             mutations.childList++;
             continue;
@@ -1355,6 +1360,21 @@
         continue;
       }
       merged.push({ ...x, extra: [] });
+    }
+    // Wrappers holding several visual sections: split them into their large children (twice at most).
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < merged.length; i++) {
+        const x = merged[i];
+        if (x.h < vh * 1.8 || x.el.localName === 'footer') continue;
+        const kids = Array.from(x.el.children)
+          .map((c) => ({ el: c, r: c.getBoundingClientRect(), cs: N.getCS(c) }))
+          .filter((k) => k.cs.display !== 'none' && k.cs.position !== 'fixed' && k.cs.position !== 'absolute' && k.r.height >= vh * 0.3 && k.r.width >= W.innerWidth * 0.5);
+        const covered = kids.reduce((a, k) => a + k.r.height, 0);
+        if (kids.length >= 2 && covered >= x.h * 0.7) {
+          merged.splice(i, 1, ...kids.map((k) => ({ el: k.el, top: k.r.top + s, h: k.r.height, cs: k.cs, extra: [] })));
+          i += kids.length - 1;
+        }
+      }
     }
     const used = new Map();
     return merged.slice(0, 40).map((x, i) => {
@@ -1987,9 +2007,12 @@
     for (const tk of rec.tracked.values()) {
       const active = tk.t.length && tNow - tk.t[tk.t.length - 1] < 120;
       if (streak) {
-        const k = (streak.get(tk.nid) || 0) + 1;
-        streak.set(tk.nid, active ? k : 0);
-        if (active && k > 20) continue; // looping element
+        const st = streak.get(tk.nid) || { run: 0, bursts: 0, was: false };
+        st.run = active ? st.run + 1 : 0;
+        if (active && !st.was) st.bursts++;
+        st.was = !!active;
+        streak.set(tk.nid, st);
+        if (st.run > 20 || st.bursts >= 3) continue; // continuous or periodic loop: not "settling"
       }
       n += tk.t.length;
     }
@@ -2246,10 +2269,24 @@
         }
         out.renderers.push(o);
       }
-      const cam = three.lastCamera;
+      // main camera = the one rendering the largest scene (the last render is often a full-screen post pass)
+      let biggest = null, size = -1;
+      for (const sc of three.scenes) {
+        let n = 0;
+        try {
+          sc.traverse(() => n++);
+        } catch (e) {
+          /* ignore */
+        }
+        if (n > size && three.cameraOf.get(sc)) {
+          size = n;
+          biggest = sc;
+        }
+      }
+      const cam = (biggest && three.cameraOf.get(biggest)) || three.lastCamera;
       if (cam) out.camera = { type: cam.type, fov: cam.fov, near: cam.near, far: cam.far, zoom: cam.zoom, position: v3(cam.position), rotation: v3(cam.rotation) };
       for (const scene of three.scenes) {
-        const s = { background: scene.background && scene.background.isColor ? col(scene.background) : scene.background ? 'texture' : null, fog: scene.fog ? { type: scene.fog.type || scene.fog.constructor.name, color: col(scene.fog.color), near: scene.fog.near, far: scene.fog.far, density: scene.fog.density } : null, objects: [] };
+        const s = { background: scene.background && scene.background.isColor ? col(scene.background) : scene.background ? 'texture' : null, fog: scene.fog ? { type: scene.fog.isFogExp2 ? 'FogExp2' : 'Fog', color: col(scene.fog.color), near: scene.fog.near, far: scene.fog.far, density: scene.fog.density } : null, objects: [] };
         let n = 0;
         scene.traverse((obj) => {
           if (n++ > 400) return;
@@ -2532,6 +2569,8 @@
       };
     },
     errors: () => journal.errors,
+    // diagnostics: what is still changing (used to tune stabilisation)
+    activity: () => ({ nonStyle: mutations.nonStyle, all: mutations.count, tracks: [...rec.tracked.values()].map((tk) => [tk.sel, tk.t.length, tk.t.length ? tk.t[tk.t.length - 1] : null]).filter((x) => x[1] > 1) }),
     sleep,
   };
   try {

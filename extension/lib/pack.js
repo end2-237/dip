@@ -248,6 +248,7 @@ function shaderMd(c, mode) {
   const out = [];
   out.push(`# ${c.id} — ${c.type}`);
   out.push('');
+  if (c.material) out.push(`**Three.js material:** \`${c.material}\`${c.shaderName ? ` (\`${c.shaderName}\`)` : ''}${c.instances > 1 ? ` · used by ${c.instances} identical programs` : ''}  `);
   out.push(`**Section:** \`${c.section}\` · **Canvas:** \`${(c.canvas && c.canvas.selector) || 'offscreen'}\` ${c.canvas && c.canvas.rect ? `(${Math.round(c.canvas.rect.w)}×${Math.round(c.canvas.rect.h)} css px, full-bleed: ${c.traits.fullBleed})` : ''}`);
   out.push('');
   if (c.llm && c.llm.summary) {
@@ -281,7 +282,7 @@ function shaderMd(c, mode) {
   return out.join('\n');
 }
 function shaderOutline(c) {
-  const src = (c.fragment || '') + '\n' + (c.vertex || '');
+  const src = (c.userFragment || c.fragment || '') + '\n' + (c.userVertex || c.vertex || '');
   const feats = [];
   const has = (re, label) => re.test(src) && feats.push(label);
   has(/texture2D|texture\(/, 'samples texture(s)');
@@ -297,6 +298,36 @@ function shaderOutline(c) {
   has(/fract\(.*sin\(/, 'hash / random');
   const lines = src.split('\n').length;
   return `- ${lines} lines of GLSL\n` + (feats.length ? feats.map((f) => '- ' + f).join('\n') : '- (no known pattern detected)');
+}
+
+function sceneMd(s, cards) {
+  const o = ['# Three.js scene', ''];
+  o.push(`- Three.js r${s.revision || '?'} · ${s.scenes} scene(s) · ${s.objects} objects · **${s.meshes} meshes** (max ${s.maxVertices} vertices)`);
+  const r = (s.renderers || [])[0];
+  if (r) o.push(`- Renderer: toneMapping ${r.toneMapping}, exposure ${r.toneMappingExposure}, colour space ${r.outputColorSpace}, pixel ratio ${r.pixelRatio}, shadows ${r.shadowMap}`);
+  if (s.camera) o.push(`- Camera: ${s.camera.type} fov ${s.camera.fov}, near ${s.camera.near}, far ${s.camera.far}, position ${JSON.stringify(s.camera.position)}`);
+  if (s.fog) o.push(`- Fog: ${JSON.stringify(s.fog)}`);
+  if (s.background) o.push(`- Background: ${s.background}`);
+  o.push(`- Materials: ${Object.entries(s.materials).map(([k, v]) => `${k} ×${v}`).join(', ')}`);
+  o.push(`- Geometries: ${Object.entries(s.geometries).map(([k, v]) => `${k} ×${v}`).join(', ')}`);
+  o.push('');
+  o.push('## Lights');
+  o.push('');
+  for (const l of s.lights) o.push(`- ${l.type} ${l.color || ''} intensity ${l.intensity} at ${JSON.stringify(l.position)}`);
+  if (!s.lights.length) o.push('- none');
+  o.push('');
+  o.push('## Custom shaders');
+  o.push('');
+  for (const c of cards.filter((x) => x.material)) o.push(`- [\`${c.id}\`](${c.id}.md) — ${c.material}${c.shaderName ? ' ' + c.shaderName : ''}: ${c.type}`);
+  if (s.models.length) {
+    o.push('');
+    o.push('## Named meshes (models)');
+    o.push('');
+    for (const m of s.models) o.push(`- ${m.name}: ${m.geometry} (${m.vertices} vertices), ${m.material}`);
+  }
+  o.push('');
+  o.push('Models and textures are proprietary: rebuild with equivalent primitives or free assets of similar complexity. Full graph: `three-scene.json`.');
+  return o.join('\n');
 }
 
 // ------------------------------------------------------------------ SPEC.md
@@ -375,7 +406,7 @@ function specMd(cap, analysis, effects, stack, mode, refs) {
   o.push('');
   if (analysis.webgl.cards.length || analysis.webgl.three) {
     for (const w of analysis.webgl.cards) o.push(`- [\`${w.id}\`](webgl/${w.id}.md) — ${w.type}, uniforms: ${w.uniforms.map((u) => u.name).join(', ')}`);
-    if (analysis.webgl.three) o.push(`- Three.js r${analysis.webgl.three.revision || '?'} scene graph: \`webgl/three-scene.json\``);
+    if (analysis.webgl.three) o.push(`- Three.js r${analysis.webgl.three.revision || '?'} scene: [\`webgl/three-scene.md\`](webgl/three-scene.md) (summary) and \`webgl/three-scene.json\` (full graph)`);
     o.push(`- GPU during capture: ${analysis.webgl.gpu || '[unknown]'}`);
   } else o.push('- none');
   o.push('');
@@ -605,8 +636,9 @@ export async function buildPackFiles(cap, analysis, opts) {
   for (const w of analysis.webgl.cards) {
     add(`webgl/${w.id}.md`, shaderMd(w, mode));
     add(`webgl/${w.id}-uniforms.json`, J(w.uniformSamples));
-    if (mode === 'study') add(`webgl/${w.id}.glsl`, `// ${w.id} — captured for study only. Do not ship.\n// ===== vertex =====\n${w.vertex}\n\n// ===== fragment =====\n${w.fragment}\n`);
+    if (mode === 'study') add(`webgl/${w.id}.glsl`, `// ${w.id} — captured for study only. Do not ship.${w.material ? `\n// Three.js ${w.material}: the prefix Three.js injects (defines, built-in uniforms/attributes) is stripped.` : ''}\n// ===== vertex =====\n${w.userVertex || w.vertex}\n\n// ===== fragment =====\n${w.userFragment || w.fragment}\n`);
   }
+  if (analysis.webgl.sceneSummary) add('webgl/three-scene.md', sceneMd(analysis.webgl.sceneSummary, analysis.webgl.cards));
   if (analysis.webgl.three) add('webgl/three-scene.json', J(mode === 'share' ? { ...analysis.webgl.three, scenes: analysis.webgl.three.scenes.map((s) => ({ ...s, objects: s.objects.map((o) => ({ ...o, materials: o.materials && o.materials.map(({ vertexShader, fragmentShader, ...m }) => m) })) })) } : analysis.webgl.three));
 
   // assets

@@ -30,6 +30,7 @@ export const EFFECT_TYPES = {
   'fluid-background-shader': 'Full-bleed WebGL background driven by time/pointer.',
   'noise-gradient': 'Animated noise / gradient shader.',
   particles: 'Particle system (WebGL points or canvas2d).',
+  'gpgpu-simulation': 'GPU simulation (ping-pong render targets, e.g. GPUComputationRenderer) feeding a visual effect.',
   '3d-scene': 'Three.js / WebGL 3D scene with meshes, lights, camera.',
   'model-viewer': '3D model presented in a viewer.',
   'split-screen': 'Split layout where halves move independently.',

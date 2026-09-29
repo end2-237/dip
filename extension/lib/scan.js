@@ -7,7 +7,7 @@ export const DEFAULT_OPTIONS = {
   breakpoints: [1440, 1024, 390],
   heights: { 1440: 900, 1024: 768, 390: 844 },
   consent: 'reject', // reject | hide | none
-  maxHovers: 30,
+  maxHovers: 20,
   maxRefEffects: 10,
   mouseSweep: true,
   includeAssets: true, // study mode: download images/fonts into the pack
@@ -101,7 +101,7 @@ export async function runScan(driver, meta, options, onProgress) {
   await step('intro', 20000, async () => {
     await call('mark', 'intro');
     const preloader = await call('detectPreloader');
-    const st = await call('waitStable', 800, 12000);
+    const st = await call('waitStable', 800, 9000);
     cap.intro = { ...st, preloader };
   });
 
@@ -144,7 +144,7 @@ export async function runScan(driver, meta, options, onProgress) {
     const detect = await call('detectScroll');
     await call('scrollToY', 0, 500);
     await call('startImpulse', 1600);
-    await driver.wheel(Math.round(vw / 2), Math.round(vh / 2), 100);
+    await driver.wheel(6, Math.round(vh / 2), 100);
     const samples = await call('getImpulse');
     cap.scroll = { detect, impulse: { delta: 100, samples } };
     await call('scrollToY', 0, 400);
@@ -162,7 +162,8 @@ export async function runScan(driver, meta, options, onProgress) {
     let stuck = 0;
     let nextPause = 0;
     while (Date.now() - t0 < o.maxScrollMs) {
-      await driver.wheel(Math.round(vw / 2), Math.round(vh / 2), o.scrollStepPx + Math.round(Math.random() * 20 - 10));
+      // wheel near the left edge: a pointer in the middle of the page would trigger hover effects while scrolling
+      await driver.wheel(6, Math.round(vh / 2), o.scrollStepPx + Math.round(Math.random() * 20 - 10));
       await sleep(o.scrollStepMs + Math.round(Math.random() * 30));
       const p = await call('scrollPos');
       if (p <= pos + 1) stuck++;
@@ -306,11 +307,13 @@ export async function runScan(driver, meta, options, onProgress) {
       await call('mark', 'mouse');
       const secs = cap.breakpoints[String(main)].sections || [];
       const targets = [secs[0], secs.find((s, i) => i > 0 && s.height > vh * 0.6)].filter(Boolean).slice(0, 2);
+      const deadline = Date.now() + 25000; // slow pages (software WebGL): stop moving, keep what was recorded
       for (const s of targets) {
+        if (Date.now() > deadline) break;
         await call('scrollToY', s.top, 300);
         await sleep(300);
-        for (let row = 0; row < 3; row++) {
-          for (let col = 0; col <= 10; col++) {
+        for (let row = 0; row < 3 && Date.now() < deadline; row++) {
+          for (let col = 0; col <= 10 && Date.now() < deadline; col++) {
             const x = row % 2 === 0 ? (col / 10) * (vw - 20) + 10 : ((10 - col) / 10) * (vw - 20) + 10;
             await driver.mouseMove(x, ((row + 1) / 4) * vh);
             await sleep(45);
@@ -390,7 +393,12 @@ async function finalize(driver, cap, o, call, step, progress, log) {
       for (const i of (cap.assets.images || []).slice(0, 60)) if (i.url && !i.url.startsWith('data:')) want.push(i.url);
       for (const m of (cap.assets.models || []).slice(0, 5)) want.push(m.url);
       const seen = new Set();
+      const deadline = Date.now() + 45000;
       for (const url of want) {
+        if (Date.now() > deadline) {
+          log.push({ step: 'asset-files', level: 'warn', error: 'time budget reached: some assets were not downloaded' });
+          break;
+        }
         if (seen.has(url) || total > o.maxAssetBytes) continue;
         seen.add(url);
         const r = await call('fetchBase64', url, 4e6).catch(() => null);

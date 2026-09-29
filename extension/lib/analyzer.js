@@ -39,7 +39,10 @@ function phaseKind(p) {
 }
 
 function shapeOfSelector(sel) {
-  return String(sel || '').replace(/:nth-of-type\(\d+\)/g, '').replace(/#[\w-]+/g, '#id');
+  return String(sel || '')
+    .replace(/:nth-of-type\(\d+\)/g, '')
+    .replace(/#(?:\\[0-9a-f]+ ?|[\w-])+/gi, '#id')
+    .replace(/\.(swiper-slide-(active|next|prev|duplicate)|is-[\w-]+|active|current|selected|visible|inview|in-view)\b/g, '');
 }
 
 // ------------------------------------------------------------------ GSAP effects
@@ -676,12 +679,12 @@ function classify(e, ctx) {
   if (/morphsvg/.test(propsStr)) return 'morph-svg';
   if (/scrambletext/.test(propsStr)) return 'text-scramble';
   if (split && e.trigger !== 'hover') return split.type === 'chars' ? 'text-reveal-chars' : split.type === 'words' ? 'text-reveal-words' : 'text-reveal-lines';
-  if (/split|line|word|char/.test(tSels) && /ypercent|"y"|translatey|opacity/.test(propsStr) && e.trigger !== 'hover') {
-    return /char/.test(tSels) ? 'text-reveal-chars' : /word/.test(tSels) ? 'text-reveal-words' : 'text-reveal-lines';
+  if (/\.(lines?|words?|chars?|split[\w-]*)\b/.test(tSels) && /ypercent|"y"|translatey|opacity/.test(propsStr) && e.trigger !== 'hover') {
+    return /\.chars?\b/.test(tSels) ? 'text-reveal-chars' : /\.words?\b/.test(tSels) ? 'text-reveal-words' : 'text-reveal-lines';
   }
   const m = e._m && e._m[0];
   const media = (m && m.isMedia) || /img|video|picture|figure|media|image/.test(tSels);
-  if (e.trigger === 'time-loop' && (/"x"|xpercent|translatex|"x":/.test(propsStr) || (a.loop && a.loop.channel === 'x'))) return 'marquee';
+  if (e.trigger === 'time-loop' && (a.loop ? a.loop.channel === 'x' && Math.abs(a.loop.max - a.loop.min) > 100 : /xpercent|translatex|"x":/.test(propsStr))) return 'marquee';
   if (e.trigger === 'mouse-move') {
     if (m && m.driverInfo && m.driverInfo.follow) return media ? 'cursor-follower-media' : 'custom-cursor';
     if (a.channels && a.channels.includes('rotate')) return 'tilt-3d';
@@ -699,6 +702,34 @@ function classify(e, ctx) {
   if (e.trigger === 'hover') return 'hover-state';
   if (e.trigger === 'route-change') return 'page-transition';
   return 'other';
+}
+
+// The same pattern applied to many elements (cards, list items, slides…) is one effect with many targets.
+function mergeSimilar(list) {
+  const out = [];
+  const byKey = new Map();
+  for (const e of list) {
+    if (e._kind === 'gsap' && e.animation && e.animation.steps) {
+      out.push(e);
+      continue;
+    }
+    const a = e.animation || {};
+    const dur = typeof a.duration === 'number' ? Math.round(a.duration * 20) : '';
+    const props = a.channels ? a.channels.join(',') : a.name || (a.props || []).join(',') || Object.keys(typeof a.to === 'object' ? a.to || {} : {}).sort().join(',');
+    const key = [e.section, e.effect_type, e.trigger, e.technique, e.source, props, dur, a.ease || '', a.loop ? a.loop.channel : ''].join('|');
+    const hit = byKey.get(key);
+    if (!hit) {
+      byKey.set(key, e);
+      out.push(e);
+      continue;
+    }
+    hit.targets = dedupeTargets([...(hit.targets || []), ...(e.targets || [])]);
+    hit.instances = (hit.instances || 1) + 1;
+    if (e._m) hit._m = [...(hit._m || []), ...e._m];
+    if (e.shots && !(hit.shots || []).length) hit.shots = e.shots;
+    hit.confidence = Math.max(hit.confidence, e.confidence);
+  }
+  return out;
 }
 
 function complexityOf(e) {
@@ -743,7 +774,9 @@ function analyzeScroll(cap) {
       const ratios = [];
       for (let i = firstMove; i < s.length - 1; i++) {
         const r0 = final - s[i][1], r1 = final - s[i + 1][1];
-        if (Math.abs(r0) > Math.abs(total) * 0.05 && Math.abs(r1) > 0.5 && s[i + 1][0] - s[i][0] > 10 && s[i + 1][0] - s[i][0] < 25) ratios.push(r1 / r0);
+        const dt = s[i + 1][0] - s[i][0];
+        // normalise to a 60fps frame: slow pages (WebGL) run at 30fps or less
+        if (Math.abs(r0) > Math.abs(total) * 0.05 && Math.abs(r1) > 0.5 && r1 / r0 > 0 && dt > 8 && dt < 250) ratios.push(Math.pow(r1 / r0, 16.667 / dt));
       }
       const settle = out.impulse.settleMs || 0;
       if (settle < 60) out.feel = 'instant (native scroll, no smoothing)';
@@ -854,9 +887,28 @@ function analyzeWebGL(cap, ctx) {
   const progs = g.programs || [];
   const uniforms = g.uniforms || [];
   const three = cap.three || {};
-  // Skip programs that belong to three's built-in materials when a scene is available? Keep all but classify.
-  progs.forEach((p, i) => {
-    const us = uniforms.filter((u) => u.pid === p.pid);
+  const hasScene = (three.scenes || []).length > 0;
+  // Three.js tags its programs with SHADER_TYPE / SHADER_NAME; built-in materials are described by the scene card,
+  // only custom ShaderMaterial / RawShaderMaterial programs get their own shader card. Identical programs are merged.
+  const seen = new Map();
+  const keep = [];
+  for (const p of progs) {
+    const src = (p.vertex || '') + '\n' + (p.fragment || '');
+    const meta = threeMeta(src);
+    if (meta.type && THREE_BUILTIN.test(meta.type)) continue;
+    if (!meta.type && hasScene && /#define (STANDARD|PHONG|LAMBERT|BASIC|MATCAP|TOON|PHYSICAL|DISTANCE|DEPTH|SHADOW)\b/.test(src)) continue;
+    const key = userCode(p.vertex) + '\u0000' + userCode(p.fragment);
+    if (seen.has(key)) {
+      seen.get(key).instances++;
+      seen.get(key).pids.push(p.pid);
+      continue;
+    }
+    const entry = { p, meta, instances: 1, pids: [p.pid] };
+    seen.set(key, entry);
+    keep.push(entry);
+  }
+  keep.forEach(({ p, meta, instances, pids }) => {
+    const us = uniforms.filter((u) => pids.includes(u.pid) && !THREE_UNIFORMS.test(u.name)).filter((u, i, a) => a.findIndex((x) => x.name === u.name) === i);
     const uDesc = us.map((u) => {
       const s = u.samples || [];
       const numeric = s.filter((x) => typeof x.v[0] === 'number');
@@ -879,9 +931,7 @@ function analyzeWebGL(cap, ctx) {
       }
       return { name: u.name, kind: u.kind, drivenBy, updates: u.count, first: s[0] ? s[0].v : null, last: s.length ? s[s.length - 1].v : null, range: rangeOf(s) };
     });
-    const src = (p.vertex || '') + '\n' + (p.fragment || '');
-    const builtinThree = /#define (STANDARD|PHONG|LAMBERT|BASIC|MATCAP|TOON|PHYSICAL|DISTANCE|DEPTH|SHADOW)|#include <common>/.test(src) && !/uTime|uMouse|uProgress/.test(src);
-    if (builtinThree && progs.length > 2) return;
+    const src = userCode(p.vertex) + '\n' + userCode(p.fragment);
     const tex = (g.textures || []).filter((t) => t.cid === p.cid);
     const ctxInfo = (g.contexts || []).find((c) => c.cid === p.cid);
     const canvas = ctxInfo && ctxInfo.canvas;
@@ -891,17 +941,23 @@ function analyzeWebGL(cap, ctx) {
     const imageTex = tex.some((t) => t.kind === 'image' || t.kind === 'video');
     const noise = /noise|snoise|fbm|simplex|perlin|random\(/i.test(src);
     const points = /gl_PointSize/.test(p.vertex || '');
+    const samplers = (src.match(/uniform\s+sampler2D\s+\w+/g) || []).length;
     let type = 'fluid-background-shader';
-    if (points) type = 'particles';
-    else if (imageTex && hasMouse) type = 'image-distortion-hover';
-    else if (imageTex) type = 'image-distortion-hover';
-    else if (noise && !full) type = 'noise-gradient';
+    if (meta.name === 'GPUComputationShader') type = 'gpgpu-simulation';
+    else if (points) type = 'particles';
+    else if ((imageTex || samplers) && (hasMouse || /hover|mouse|pointer/i.test(src))) type = 'image-distortion-hover';
+    else if (imageTex && !hasScene) type = 'image-distortion-hover';
     else if (/grain/i.test(src)) type = 'grain-overlay';
-    else if ((three.scenes || []).some((s) => (s.objects || []).some((o) => o.materials))) type = '3d-scene';
-    const id = 'w' + String(cards.length + 1).padStart(2, '0') + '-' + slug(type);
+    else if (noise && !full) type = 'noise-gradient';
+    else if (hasScene && !full) type = '3d-scene';
+    const id = 'w' + String(cards.length + 1).padStart(2, '0') + '-' + slug(meta.name && meta.name !== 'GPUComputationShader' ? meta.name : type);
     cards.push({
       id,
       pid: p.pid,
+      pids,
+      instances,
+      material: meta.type || null,
+      shaderName: meta.name || null,
       type,
       section: canvas && canvas.rect ? sectionFor(ctx.sections, canvas.rect.y) : null,
       canvas,
@@ -911,10 +967,60 @@ function analyzeWebGL(cap, ctx) {
       traits: { noise, points, vertexDeformation: (g.verticesMax || 0) > 1000 && /position\s*\+|position\.z|pos\.z|sin\(/.test(p.vertex || ''), fullBleed: !!full },
       vertex: p.vertex,
       fragment: p.fragment,
-      uniformSamples: uniforms.filter((u) => u.pid === p.pid),
+      userVertex: userCode(p.vertex),
+      userFragment: userCode(p.fragment),
+      uniformSamples: us,
     });
   });
-  return { cards, three: three && (three.scenes || []).length ? three : null, gpu: g.gpu, drawCalls: g.drawCallsPerFrame, canvas2d: g.canvas2d, wgsl: (g.wgsl || []).length };
+  return { cards, three: hasScene ? three : null, sceneSummary: hasScene ? summarizeScene(three, progs) : null, gpu: g.gpu, drawCalls: g.drawCallsPerFrame, canvas2d: g.canvas2d, wgsl: (g.wgsl || []).length, programsTotal: progs.length };
+}
+
+const THREE_BUILTIN = /^(Mesh\w*Material|LineBasicMaterial|LineDashedMaterial|PointsMaterial|SpriteMaterial|ShadowMaterial)$/;
+// uniforms Three.js sets on every program (camera, lights, fog…): not design parameters
+const THREE_UNIFORMS = /^(modelMatrix|modelViewMatrix|projectionMatrix|viewMatrix|normalMatrix|cameraPosition|isOrthographic|toneMappingExposure|logDepthBufFC|ambientLightColor|lightProbe|(directional|point|spot|rectArea|hemisphere)Lights?\[|(directional|point|spot)Shadow|fog(Color|Near|Far|Density)|ltc_[12]|dfgLUT|boneTexture|bindMatrix)/;
+function threeMeta(src) {
+  const t = /#define SHADER_TYPE (\w+)/.exec(src || '');
+  const n = /#define SHADER_NAME ([^\n]*)/.exec(src || '');
+  return { type: t ? t[1] : null, name: n && n[1].trim() ? n[1].trim() : null };
+}
+// Strip the prefix Three.js prepends (defines, built-in uniforms and attributes) to keep the author's code.
+function userCode(s) {
+  s = s || '';
+  let i = s.lastIndexOf('uniform bool isOrthographic;');
+  if (i < 0) return s;
+  i += 'uniform bool isOrthographic;'.length;
+  const skin = s.indexOf('attribute vec4 skinWeight;', i);
+  if (skin >= 0 && skin - i < 4000) {
+    const end = s.indexOf('#endif', skin);
+    if (end >= 0) i = end + 6;
+  }
+  return s.slice(i).replace(/^\s+/, '');
+}
+function summarizeScene(three, progs) {
+  const count = (arr, f) => arr.reduce((m, x) => ((m[f(x)] = (m[f(x)] || 0) + 1), m), {});
+  const objs = (three.scenes || []).flatMap((s) => s.objects || []);
+  const meshes = objs.filter((o) => o.materials);
+  const mats = meshes.flatMap((o) => o.materials || []);
+  const lights = objs.filter((o) => /Light$/.test(o.type || ''));
+  const geos = meshes.map((o) => o.geometry).filter(Boolean);
+  const materialTypes = count(mats, (m) => m.type);
+  const programTypes = count(progs.map((p) => threeMeta((p.vertex || '') + (p.fragment || ''))), (m) => (m.name ? `${m.type}:${m.name}` : m.type || 'raw'));
+  return {
+    revision: three.revision,
+    renderers: three.renderers,
+    camera: three.camera,
+    scenes: (three.scenes || []).length,
+    objects: objs.length,
+    meshes: meshes.length,
+    materials: materialTypes,
+    geometries: count(geos, (g) => g.type),
+    maxVertices: geos.reduce((a, g) => Math.max(a, g.vertices || 0), 0),
+    lights: lights.map((l) => ({ type: l.type, color: l.color, intensity: l.intensity, position: l.position })),
+    fog: (three.scenes || []).map((s) => s.fog).filter(Boolean)[0] || null,
+    background: (three.scenes || []).map((s) => s.background).filter(Boolean)[0] || null,
+    programs: programTypes,
+    models: meshes.filter((o) => o.name && !/^(Mesh|Object)/.test(o.name)).slice(0, 30).map((o) => ({ name: o.name, geometry: o.geometry && o.geometry.type, vertices: o.geometry && o.geometry.vertices, material: (o.materials || [])[0] && o.materials[0].type })),
+  };
 }
 function rangeOf(samples) {
   const nums = samples.map((s) => s.v[0]).filter((x) => typeof x === 'number');
@@ -1031,6 +1137,7 @@ export function analyze(cap) {
     if (e.scrollTrigger && e.scrollTrigger.triggerNid && cap.nidRects && cap.nidRects[e.scrollTrigger.triggerNid]) y = cap.nidRects[e.scrollTrigger.triggerNid].y;
     e.section = e.effect_type === 'custom-cursor' || e.effect_type === 'page-transition' ? 'global' : sectionFor(sections, y);
   }
+  all = mergeSimilar(all);
   // Drop trivial measured noise: single-target, sub-50ms, tiny changes
   all = all.filter((e) => !(e._kind === 'recorder' && e.trigger !== 'scroll-scrub' && e.trigger !== 'time-loop' && e.trigger !== 'mouse-move' && e.animation && e.animation.duration != null && e.animation.duration < 0.05));
   // order: by section order then time

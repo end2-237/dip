@@ -10,7 +10,7 @@ import { analyze } from './lib/analyzer.js';
 import { renameFrames } from './lib/scan.js';
 
 const $ = (s) => document.querySelector(s);
-const settings = { lang: 'fr', apiKey: '', useLLM: false, onboarded: false, mode: 'deep', exportMode: 'study', consent: 'reject', maxHovers: 30, breakpoints: [1440, 1024, 390] };
+const settings = { lang: 'fr', apiKey: '', useLLM: false, onboarded: false, mode: 'deep', exportMode: 'study', consent: 'reject', maxHovers: 20, breakpoints: [1440, 1024, 390] };
 let current = null; // { cap, analysis }
 let busy = false;
 let stopResolver = null;

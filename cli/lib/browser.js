@@ -25,6 +25,10 @@ export async function launchBrowser(opts) {
     /* let playwright resolve its own browsers */
   }
   if (opts.channel) launch.channel = opts.channel;
+  // honour the standard proxy variables (corporate networks, sandboxes)
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+  // (raw Chromium flags: Playwright's `proxy` option also routes loopback through the proxy, which breaks local dev servers)
+  if (proxy) launch.args.push(`--proxy-server=${proxy.replace(/^https?:\/\/[^@]*@/, 'http://')}`, '--proxy-bypass-list=<local>;localhost;127.0.0.1;[::1]');
   const browser = await pw.chromium.launch(launch);
   const context = await browser.newContext({ viewport: { width: opts.width || 1440, height: opts.height || 900 }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
   return { browser, context, pw };
