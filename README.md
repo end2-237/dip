@@ -94,12 +94,21 @@ node cli/dip-capture.js https://exemple.com --mode share --headless
 ```bash
 npm test                         # tests unitaires + scan des fixtures (Playwright)
 npm run serve:fixtures           # sert fixtures/ sur http://127.0.0.1:5555
+npm run package:extension        # crée dist/dip-extension-0.1.0.zip (partage / Chrome Web Store)
 ```
 
 - `extension/probes/probes.js` : sondes injectées dans la page (MAIN world, `document_start`).
 - `extension/lib/` : scénario de scan, drivers (CDP / Standard), analyseur, fit d'easing, taxonomie, writer du pack, zip — **partagés** par l'extension et la CLI.
 - `fixtures/` : pages de test avec effets connus (`expected.json` = vérité terrain).
 - `docs/DECISIONS.md` : décisions d'architecture.
+
+## Limites actuelles (v0.1)
+
+- Le mode **Standard** est moins testé que le mode Deep (pas d'émulation de breakpoints ni de survols réels).
+- Pas encore de clips vidéo WebM (intro, survols) : les références sont des captures PNG.
+- Les effets non expliqués par une trace (« unexplained », détection par diff d'images) et la sélection
+  d'une zone en mode manuel sont prévus dans une version suivante.
+- La web app (phase 2 : bibliothèque, partage, recherche) n'est pas encore construite.
 
 ## Éthique
 
