@@ -1,16 +1,33 @@
 // DIP Studio — full-page dashboard: library folder, scans, measured animations, suggestions, creation commands.
 import { getRoot, pickRoot, access, fsAdapter, readBlob, savePack, removePack, writeFile } from './lib/workspace.js';
-import { listPacks, writeIndex, effectsByType, rankReferences, librarySuggestions, libraryStats, words } from './lib/library.js';
+import { listPacks, writeIndex, effectsByType, rankReferences, librarySuggestions, libraryStats, words, versionLess } from './lib/library.js';
+import { ANALYZER_VERSION } from './lib/analyzer.js';
+import { buildPackFiles, packName } from './lib/pack.js';
+import { dissectUrl, shareImage } from './lib/runner.js';
+import { stepLabel } from './lib/i18n.js';
 import { readPackZip } from './lib/unzip-web.js';
 import { EFFECT_TYPES } from './lib/taxonomy.js';
 
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => [...(el || document).querySelectorAll(s)];
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const TITLES = { overview: 'Vue d’ensemble', library: 'Bibliothèque', motion: 'Animations', create: 'Créer', settings: 'Réglages' };
+const TITLES = { overview: 'Vue d’ensemble', library: 'Bibliothèque', motion: 'Bibliothèque d’effets', create: 'Créer', settings: 'Réglages' };
+const TYPE_FR = {
+  'text-reveal-lines': 'Révélation de texte (lignes)', 'text-reveal-words': 'Révélation de texte (mots)', 'text-reveal-chars': 'Révélation de texte (lettres)', 'text-scramble': 'Texte brouillé',
+  'fade-up-reveal': 'Apparition en fondu', 'scale-reveal': 'Apparition à l’échelle', marquee: 'Défilement infini', 'image-reveal-clip': 'Révélation d’image (masque)', 'image-parallax': 'Parallaxe d’image',
+  'image-distortion-hover': 'Distorsion d’image au survol', 'image-trail': 'Traînée d’images', 'gallery-drag': 'Galerie à glisser', 'horizontal-scroll-section': 'Défilement horizontal', 'pinned-sequence': 'Séquence épinglée',
+  'scroll-scrubbed-video': 'Vidéo pilotée au scroll', 'image-sequence-canvas': 'Séquence d’images', counter: 'Compteur', 'magnetic-element': 'Élément magnétique', 'custom-cursor': 'Curseur personnalisé',
+  'cursor-follower-media': 'Média qui suit le curseur', 'tilt-3d': 'Inclinaison 3D', 'mouse-parallax': 'Parallaxe à la souris', 'page-transition': 'Transition de page', preloader: 'Écran de chargement',
+  'menu-overlay': 'Menu plein écran', 'fluid-background-shader': 'Fond fluide (shader)', 'noise-gradient': 'Dégradé animé', particles: 'Particules', 'gpgpu-simulation': 'Simulation GPU', '3d-scene': 'Scène 3D',
+  'camera-scroll-path': 'Caméra 3D au scroll', '3d-object-motion': 'Objet 3D animé', 'press-hold': 'Appui long', tabs: 'Onglets', 'click-feedback': 'Retour au clic', 'scene-color-shift': 'Changement de décor',
+  'zoom-through': 'Zoom à travers', 'media-expand': 'Média qui s’agrandit', 'media-choreography': 'Composition d’images', 'model-viewer': 'Visionneuse 3D', 'split-screen': 'Écran partagé',
+  'sticky-stack-cards': 'Cartes empilées', accordion: 'Accordéon', 'blend-mode-text': 'Texte en mode de fusion', 'svg-path-draw': 'Tracé SVG', 'morph-svg': 'Morphing SVG', lottie: 'Lottie', 'grain-overlay': 'Grain animé',
+  'hover-state': 'État de survol', 'smooth-scroll': 'Scroll fluide', other: 'Autre',
+};
+const typeFr = (t) => TYPE_FR[t] || t;
 const TRIGGERS = { load: 'au chargement', 'scroll-enter': 'à l’entrée au scroll', 'scroll-scrub': 'lié au scroll', hover: 'au survol', press: 'appui long', 'mouse-move': 'à la souris', click: 'au clic', drag: 'glisser', 'time-loop': 'en boucle', 'route-change': 'changement de page' };
 
-const state = { root: null, access: 'none', packs: [], page: 'overview', libFilter: 'all', moTrigger: 'all', mode: 'create', refs: new Set(), refsTouched: false, windowId: null };
+const state = { root: null, access: 'none', packs: [], page: 'overview', libFilter: 'all', moTrigger: 'all', moType: 'all', mode: 'create', refs: new Set(), refsTouched: false, windowId: null };
 const thumbCache = new Map();
 
 // ------------------------------------------------------------------ helpers
@@ -180,7 +197,7 @@ function render() {
 function packCard(p) {
   const el = document.createElement('article');
   el.className = 'card';
-  el.innerHTML = `<div class="thumb"><img alt=""><div class="tags"><span class="badge">Tier ${esc(p.tier)}</span>${p.threeD ? '<span class="badge violet">3D</span>' : ''}${p.hasDna ? '<span class="badge ok">ADN</span>' : ''}</div></div>
+  el.innerHTML = `<div class="thumb"><img alt=""><div class="tags"><span class="badge">Tier ${esc(p.tier)}</span>${p.threeD ? '<span class="badge violet">3D</span>' : ''}${p.hasDna ? '<span class="badge ok">ADN</span>' : ''}${isOld(p) ? `<span class="badge warn" title="Analysé avec DIP ${esc(p.analyzerVersion)} — version actuelle ${ANALYZER_VERSION}">ancienne version</span>` : ''}</div></div>
   <div class="card-b"><div class="card-t"><b>${esc(p.domain)}</b><span>${fmtDate(p.date)}</span></div>
   <div class="card-m"><span>${p.effects.length} animations · ${p.sections.length} sections</span><span class="sw">${p.palette.slice(0, 5).map((c) => `<i class="swatch" style="background:${esc(c.hex)}" title="${esc(c.hex)}"></i>`).join('')}</span></div></div>`;
   lazyImg($('img', el), thumbOf(p));
@@ -199,10 +216,11 @@ function renderOverview() {
   ]
     .map(([v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`)
     .join('');
-  const sugg = librarySuggestions(state.packs);
+  const sugg = librarySuggestions(state.packs, ANALYZER_VERSION);
   if (!state.packs.length) sugg.unshift({ kind: 'scan', text: 'Ta bibliothèque est vide : scanne un premier site (bouton « Scanner un site ») ou importe des packs .zip déjà téléchargés.' });
-  $('#suggestions').innerHTML = sugg.map((x, i) => `<div class="sugg"><span class="ic ${x.kind}"></span><div>${esc(x.text)}</div>${x.command ? `<div class="cmdline"><code>${esc(x.command)}</code><button class="icon" data-copy="${i}" title="Copier"><svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.8c0-.7.6-1.3 1.3-1.3H10"/></svg></button></div>` : ''}</div>`).join('');
+  $('#suggestions').innerHTML = sugg.map((x, i) => `<div class="sugg"><span class="ic ${x.kind}"></span><div>${esc(x.text)}</div>${x.action === 'redissect' ? `<div class="cmdline"><button class="primary" data-redissect>Tout redisséquer</button></div>` : ''}${x.command ? `<div class="cmdline"><code>${esc(x.command)}</code><button class="icon" data-copy="${i}" title="Copier"><svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.8c0-.7.6-1.3 1.3-1.3H10"/></svg></button></div>` : ''}</div>`).join('');
   $$('[data-copy]', $('#suggestions')).forEach((b) => (b.onclick = () => copy(sugg[+b.dataset.copy].command)));
+  $$('[data-redissect]', $('#suggestions')).forEach((b) => (b.onclick = () => redissect(state.packs.filter(isOld))));
   $('#tempo').innerHTML = `<dl class="kv">
     <dt>Durée typique</dt><dd>${s.medianDuration != null ? s.medianDuration + ' s' : '—'}</dd>
     <dt>Scroll (lerp moyen)</dt><dd>${s.lerp != null ? s.lerp : '—'}</dd>
@@ -223,7 +241,11 @@ function matches(p, q) {
 function renderLibrary() {
   const q = $('#search').value;
   const f = state.libFilter;
-  const list = state.packs.filter((p) => (f === '3d' ? p.threeD : f === 'nodna' ? !p.hasDna : f === 'dna' ? p.hasDna : true) && matches(p, q));
+  const list = state.packs.filter((p) => (f === '3d' ? p.threeD : f === 'nodna' ? !p.hasDna : f === 'dna' ? p.hasDna : f === 'old' ? isOld(p) : true) && matches(p, q));
+  const old = state.packs.filter(isOld);
+  const btn = $('#btn-redissect-all');
+  btn.hidden = !old.length;
+  $('span', btn).textContent = `Redisséquer les anciennes versions (${old.length})`;
   const grid = $('#lib-grid');
   grid.innerHTML = '';
   for (const p of list) grid.appendChild(packCard(p));
@@ -231,24 +253,46 @@ function renderLibrary() {
 }
 
 // ------------------------------------------------------------------ motion index
+async function curveSvg(p, id) {
+  const txt = await fsAdapter(state.root).readText(`${p.path}/motion/curves/${id}.json`).catch(() => null);
+  if (!txt) return '';
+  try {
+    const pts = JSON.parse(txt).points || [];
+    if (pts.length < 2) return '';
+    const d = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${(x * 44).toFixed(1)},${(26 - y * 26).toFixed(1)}`).join(' ');
+    return `<svg class="curve" viewBox="-1 -2 46 30"><path d="${d}"/></svg>`;
+  } catch (e) {
+    return '';
+  }
+}
 function renderMotion() {
   const q = $('#search').value.toLowerCase();
   const groups = effectsByType(state.packs);
   const trig = new Set(state.packs.flatMap((p) => p.effects.map((e) => e.trigger)));
-  $('#mo-filters').innerHTML = ['all', ...Object.keys(TRIGGERS).filter((t) => trig.has(t))].map((t) => `<button class="seg ${state.moTrigger === t ? 'on' : ''}" data-t="${t}">${t === 'all' ? 'Tous' : TRIGGERS[t]}</button>`).join('');
+  $('#mo-types').innerHTML = [['all', 'Tous les effets', state.packs.reduce((a, p) => a + p.effects.length, 0)], ...groups.map(([t, l]) => [t, typeFr(t), l.length])]
+    .map(([t, label, n]) => `<button class="seg ${state.moType === t ? 'on' : ''}" data-ty="${esc(t)}">${esc(label)} <span class="muted">${n}</span></button>`)
+    .join('');
+  $$('.seg', $('#mo-types')).forEach((b) => (b.onclick = () => ((state.moType = b.dataset.ty), renderMotion())));
+  $('#mo-filters').innerHTML = ['all', ...Object.keys(TRIGGERS).filter((t) => trig.has(t))].map((t) => `<button class="seg ${state.moTrigger === t ? 'on' : ''}" data-t="${t}">${t === 'all' ? 'Tous les déclencheurs' : TRIGGERS[t]}</button>`).join('');
   $$('.seg', $('#mo-filters')).forEach((b) => (b.onclick = () => ((state.moTrigger = b.dataset.t), renderMotion())));
-  const out = [];
-  for (const [type, list] of groups) {
-    const rows = list.filter((e) => (state.moTrigger === 'all' || e.trigger === state.moTrigger) && (!q || [type, e.id, e.pack.domain, e.ease, e.technique].join(' ').toLowerCase().includes(q)));
-    if (!rows.length) continue;
-    out.push(`<div class="mo-group"><h3>${esc(type)} <em>${rows.length}</em></h3>${EFFECT_TYPES[type] ? `<p class="mo-desc">${esc(EFFECT_TYPES[type])}</p>` : ''}
-      ${rows
-        .slice(0, 60)
-        .map((e) => `<div class="mo-row" data-pack="${esc(e.pack.path)}" data-id="${esc(e.id)}"><span>${esc(e.pack.domain)}</span><span class="mono">${esc(e.id)}</span><span class="muted">${esc(TRIGGERS[e.trigger] || e.trigger)}</span><span class="mono">${e.duration != null ? e.duration + ' s' : '—'}</span><span class="mono">${esc(e.ease || e.technique || '')}</span></div>`)
-        .join('')}</div>`);
+  const rows = groups
+    .flatMap(([type, list]) => list.map((e) => ({ ...e, type })))
+    .filter((e) => (state.moType === 'all' || e.type === state.moType) && (state.moTrigger === 'all' || e.trigger === state.moTrigger) && (!q || [e.type, typeFr(e.type), e.id, e.pack.domain, e.ease, e.technique].join(' ').toLowerCase().includes(q)))
+    .slice(0, 240);
+  const grid = $('#mo-list');
+  grid.innerHTML = '';
+  if (!rows.length) grid.innerHTML = '<div class="empty-note">Aucun effet pour ce filtre.</div>';
+  for (const e of rows) {
+    const el = document.createElement('article');
+    el.className = 'fx';
+    el.innerHTML = `<div class="fx-prev"><img alt=""><span class="badge">${esc(TRIGGERS[e.trigger] || e.trigger)}</span></div>
+      <div class="fx-b"><b>${esc(typeFr(e.type))}</b><span>${esc(e.pack.domain)} · <span class="mono">${esc(e.id)}</span></span><span class="mono">${e.duration != null ? e.duration + ' s' : ''}${e.ease ? ' · ' + esc(e.ease) : ''}${e.stagger != null ? ' · décalage ' + e.stagger + ' s' : ''}</span></div>`;
+    const file = e.preview ? `${e.pack.path}/${e.preview}` : e.section && e.section !== 'global' ? `${e.pack.path}/reference/1440/${e.section}.png` : null;
+    lazyImg($('img', el), file ? thumbOf(e.pack, file) : thumbOf(e.pack));
+    if (e.curve) curveSvg(e.pack, e.id).then((svg) => svg && $('.fx-prev', el).insertAdjacentHTML('beforeend', svg));
+    el.onclick = () => openDoc(e.pack, `motion/effects/${e.id}.md`, typeFr(e.type) + ' — ' + e.id);
+    grid.appendChild(el);
   }
-  $('#mo-list').innerHTML = out.join('') || '<div class="empty-note">Aucune animation mesurée pour l’instant.</div>';
-  $$('.mo-row').forEach((r) => (r.onclick = () => openDoc(state.packs.find((p) => p.path === r.dataset.pack), `motion/effects/${r.dataset.id}.md`, r.dataset.id)));
 }
 
 // ------------------------------------------------------------------ drawer
@@ -283,6 +327,7 @@ function openPack(p) {
     <div class="dr-actions">
       <button class="primary" id="dr-use">Utiliser comme référence</button>
       ${p.hasDna ? '' : `<button id="dr-dna">Copier /dip-dna</button>`}
+      <button id="dr-re">${isOld(p) ? 'Redisséquer (nouvelle version)' : 'Redisséquer'}</button>
       <button class="ghost" id="dr-open">Ouvrir le site</button>
       <button class="ghost" id="dr-del">Supprimer</button>
     </div>
@@ -302,6 +347,10 @@ function openPack(p) {
   };
   if ($('#dr-dna')) $('#dr-dna').onclick = () => copy('/dip-dna ' + p.path);
   $('#dr-open').onclick = () => chrome.tabs.create({ url: p.url });
+  $('#dr-re').onclick = () => {
+    closeDrawer();
+    redissect([p]);
+  };
   $('#dr-del').onclick = async () => {
     if (!confirm(`Supprimer ${p.domain} (${p.name}) de la bibliothèque ?`)) return;
     await removePack(state.root, p.name);
@@ -412,6 +461,58 @@ $('#cr-form').addEventListener('submit', async (e) => {
   }
 });
 $('#cr-copy').onclick = () => copy($('#cr-cmd').textContent);
+
+// ------------------------------------------------------------------ re-dissect (new DIP version, same URLs)
+const isOld = (p) => versionLess(p.analyzerVersion, ANALYZER_VERSION);
+let reBusy = false;
+const KEEP = ['DESIGN_DNA.md', 'dna.json', 'NOTES.md']; // written by Claude: kept across re-dissections
+async function redissect(list) {
+  if (reBusy || !list.length) return;
+  if (!ready()) return toast('Autorise d’abord l’accès au dossier');
+  if (list.length > 1 && !confirm(`Redisséquer ${list.length} site(s) ? Compte 3 à 6 minutes par site. Garde cette page visible pendant ce temps (une petite fenêtre s’ouvre pour chaque site).`)) return;
+  reBusy = true;
+  const st = (await chrome.storage.local.get(['dipSettings'])).dipSettings || {};
+  const job = $('#job');
+  job.hidden = false;
+  let ok = 0;
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i];
+      const head = `Redissection ${i + 1}/${list.length} · ${p.domain}`;
+      $('#job-title').textContent = head;
+      const onProgress = (x) => {
+        $('#job-pct').textContent = x.pct + '%';
+        $('#job-bar').style.width = x.pct + '%';
+        $('#job-step').textContent = stepLabel('fr', x.label);
+      };
+      try {
+        const mode = p.mode === 'share' ? 'share' : 'study';
+        const { cap, analysis } = await dissectUrl(p.url, { deep: true, breakpoints: st.breakpoints || [1440, 1024, 390], consent: st.consent || 'reject', maxHovers: st.maxHovers || 30, exportMode: mode }, onProgress);
+        if (!analysis) throw new Error((cap.log.find((l) => l.level === 'error') || {}).error || 'analyse impossible');
+        $('#job-step').textContent = 'Enregistrement dans la bibliothèque…';
+        const files = await buildPackFiles(cap, analysis, { mode, transformImage: mode === 'share' ? shareImage : null });
+        const fsa = fsAdapter(state.root);
+        for (const f of KEEP) {
+          const text = await fsa.readText(`${p.path}/${f}`);
+          if (text != null && !files.some((x) => x.path === f)) files.push({ path: f, data: text });
+        }
+        const name = packName(cap) + (mode === 'share' ? '_share' : '');
+        await savePack(state.root, name, files);
+        if (name !== p.name) await removePack(state.root, p.name);
+        ok++;
+      } catch (e) {
+        toast(`${p.domain} : ${e.message || e}`);
+        console.error(e);
+      }
+    }
+  } finally {
+    reBusy = false;
+    job.hidden = true;
+    await refresh();
+  }
+  toast(`${ok}/${list.length} site(s) redisséqué(s)`);
+}
+$('#btn-redissect-all').onclick = () => redissect(state.packs.filter(isOld));
 
 // ------------------------------------------------------------------ scan & import
 $('#btn-scan').onclick = () => $('#dlg-scan').showModal();

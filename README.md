@@ -99,10 +99,36 @@ Bouton ▦ en haut du panneau DIP → une page plein écran :
   rythme de la bibliothèque (durées, easings, lerp).
 - **Bibliothèque** : tous les scans, filtres (3D, avec/sans ADN), fiche détaillée (palette, typos, sections,
   animations, SPEC / ADN / ASSETS lisibles directement), import de packs `.zip` déjà téléchargés.
-- **Animations** : toutes les animations mesurées, classées par type et par déclencheur.
+- **Bibliothèque d’effets** : tous les effets mesurés, en cartes avec aperçu et courbe, filtrables par type et par déclencheur.
 - **Créer** : projet original, transformation d’un site client, clonage ou ADN. Tu décris le projet,
   DIP propose les références les plus adaptées, écrit le brief dans `briefs/` et te donne la commande à
   coller dans Claude Code (abonnement, sans clé API).
+
+## Ce que DIP capture (v0.2)
+
+- Scroll : scrubs, révélations, sections épinglées, défilement horizontal, Lenis / smooth scroll.
+- **Décor** : changements de couleur ou d'ambiance de la page au scroll (progressifs ou en transition),
+  zoom « à travers » un objet ou un mot, média qui s'agrandit jusqu'au plein écran (`motion/scene.json`).
+- **Compositions d'images** : spirale, cercle ou orbite, éventail, pile, collage, avec leur mouvement
+  (`structure/compositions.json`).
+- **Survols** : liens, boutons, cartes, et aussi titres et éléments stylés par des règles CSS `:hover` ;
+  les grands titres sont traversés lentement à la souris (effets lettre par lettre).
+- **Clics** (retour visuel, sans quitter la page), **appuis longs**, **menus, accordéons, onglets**,
+  **glisser** (galeries, carrousels, avec inertie).
+- 3D Three.js : caméra, objets, mouvements, shaders, post-traitement, géométries en `.glb` d'étude.
+
+## Redisséquer après une mise à jour
+
+Chaque pack garde la version de DIP qui l'a produit. Dans le tableau de bord, les sites analysés avec une
+ancienne version portent le badge « ancienne version » : **Bibliothèque → Redisséquer les anciennes
+versions** (ou « Redisséquer » dans la fiche d'un site). Une petite fenêtre s'ouvre pour chaque site ; garde
+le tableau de bord visible. L'ADN déjà écrit par Claude (`DESIGN_DNA.md`, `dna.json`) est conservé.
+
+## Skills Claude Code
+
+La bibliothèque et chaque pack contiennent `.claude/skills/` ; Claude les utilise tout seul :
+`blender-web-3d` (objets 3D modélisés par script Blender, rendu d'aperçu, export `.glb`),
+`three-premium`, `motion-premium`, `art-direction`, `asset-pipeline`. Copie de référence : `claude-skills/`.
 
 ## Créer : bibliothèque, commandes Claude Code, images et 3D
 
@@ -142,7 +168,7 @@ sur mesure exportées en `.glb` d'étude dans `webgl/geometry/`).
 ```bash
 npm test                         # tests unitaires + scan des fixtures (Playwright)
 npm run serve:fixtures           # sert fixtures/ sur http://127.0.0.1:5555
-npm run package:extension        # crée dist/dip-extension-0.1.0.zip (partage / Chrome Web Store)
+npm run package:extension        # crée dist/dip-extension-0.2.0.zip (partage / Chrome Web Store)
 ```
 
 - `extension/probes/probes.js` : sondes injectées dans la page (MAIN world, `document_start`).

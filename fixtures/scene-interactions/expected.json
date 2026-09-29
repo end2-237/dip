@@ -1,0 +1,15 @@
+{
+  "stack": [],
+  "scroll": { "type": "native" },
+  "maxEffects": 16,
+  "effects": [
+    { "effect_type": "hover-state", "trigger": "hover", "source": "measured:hover" },
+    { "effect_type": "click-feedback", "trigger": "click", "source": "measured:click" },
+    { "effect_type": "gallery-drag", "trigger": "drag", "source": "measured:drag" },
+    { "effect_type": "scene-color-shift", "trigger": "scroll-enter", "source": "measured:scene" },
+    { "effect_type": "scene-color-shift", "trigger": "scroll-scrub", "source": "measured:scene" },
+    { "effect_type": "zoom-through", "trigger": "scroll-scrub", "source": "measured:recorder" },
+    { "effect_type": "media-expand", "trigger": "scroll-scrub", "source": "measured:recorder" },
+    { "effect_type": "media-choreography", "trigger": "scroll-scrub", "source": "measured:composition", "layout": "spiral" }
+  ]
+}

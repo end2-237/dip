@@ -55,7 +55,7 @@ export const STRINGS = {
     savedLib: 'Enregistré dans la bibliothèque',
     noWorkspace: 'Choisis un dossier de bibliothèque dans le tableau de bord pour y enregistrer automatiquement tes scans.',
     workspaceLocked: 'Accès au dossier de la bibliothèque refusé : ouvre le tableau de bord pour le réautoriser.',
-    steps: { arm: 'Armement et rechargement', intro: 'Intro', consent: 'Consentement', scroll: 'Passe de scroll', snapshot: 'Snapshot et références', frames: 'Frames de référence', hover: 'Balayage des survols', mouse: 'Mouvement libre de la souris', collect: 'Collecte finale', analysis: 'Analyse', done: 'Terminé', manual: 'Enregistrement manuel', failed: 'Échec' },
+    steps: { arm: 'Armement et rechargement', intro: 'Intro', consent: 'Consentement', scroll: 'Passe de scroll', snapshot: 'Snapshot et références', frames: 'Frames de référence', hover: 'Balayage des survols', mouse: 'Mouvement libre de la souris', press: 'Appuis longs', toggle: 'Menus et accordéons', click: 'Clics', drag: 'Glisser', collect: 'Collecte finale', analysis: 'Analyse', done: 'Terminé', manual: 'Enregistrement manuel', failed: 'Échec' },
   },
   en: {
     tagline: 'Technical X-ray of creative websites',
@@ -112,7 +112,7 @@ export const STRINGS = {
     savedLib: 'Saved to the library',
     noWorkspace: 'Choose a library folder in the dashboard to save your scans there automatically.',
     workspaceLocked: 'Access to the library folder was denied: open the dashboard to allow it again.',
-    steps: { arm: 'Arm & reload', intro: 'Intro', consent: 'Consent', scroll: 'Scroll pass', snapshot: 'Snapshot & references', frames: 'Reference frames', hover: 'Hover sweep', mouse: 'Free mouse movement', collect: 'Final collect', analysis: 'Analysis', done: 'Done', manual: 'Manual recording', failed: 'Failed' },
+    steps: { arm: 'Arm & reload', intro: 'Intro', consent: 'Consent', scroll: 'Scroll pass', snapshot: 'Snapshot & references', frames: 'Reference frames', hover: 'Hover sweep', mouse: 'Free mouse movement', press: 'Press & hold', toggle: 'Menus & accordions', click: 'Clicks', drag: 'Drag', collect: 'Final collect', analysis: 'Analysis', done: 'Done', manual: 'Manual recording', failed: 'Failed' },
   },
 };
 

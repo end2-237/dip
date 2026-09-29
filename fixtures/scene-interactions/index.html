@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fixture — décor changes & interactions</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { background: #f3efe6; color: #141414; font-family: Helvetica, Arial, sans-serif; transition: background-color .6s ease, color .6s ease; }
+  body.is-dark { background: #101216; color: #f3efe6; }
+  section { position: relative; }
+  .hero { height: 100vh; display: grid; place-items: center; }
+  /* CSS-only hover on a title that is not a link */
+  .hero-title { font-size: 8vw; letter-spacing: 0; transition: letter-spacing .5s cubic-bezier(.22,1,.36,1), color .5s; cursor: default; }
+  .hero-title:hover { letter-spacing: .06em; color: #c2410c; }
+  .cta { display: block; margin: 0 auto; }
+  .btn-pulse { font: inherit; font-size: 18px; padding: 14px 28px; border: 0; border-radius: 99px; background: #141414; color: #f3efe6; transition: transform .25s cubic-bezier(.34,1.56,.64,1), background-color .25s; }
+  .btn-pulse.is-clicked { transform: scale(.9); background-color: #c2410c; }
+  .gallery { height: 70vh; overflow: hidden; display: flex; align-items: center; }
+  .track { display: flex; gap: 24px; padding: 0 8vw; cursor: grab; will-change: transform; touch-action: pan-y; }
+  .slide { flex: none; width: 420px; height: 52vh; border-radius: 12px; background: linear-gradient(135deg, #d8cbb3, #9c8a6c); }
+  .dark-zone { height: 160vh; display: grid; place-items: center; font-size: 5vw; }
+  .scrub-zone { height: 180vh; display: grid; place-items: center; font-size: 4vw; }
+  .zoom-wrap { height: 260vh; }
+  .zoom-sticky { position: sticky; top: 0; height: 100vh; display: grid; place-items: center; overflow: hidden; }
+  .zoom-word { font-size: 10vw; font-weight: 800; transform-origin: 50% 55%; }
+  .expand-wrap { height: 240vh; }
+  .expand-sticky { position: sticky; top: 0; height: 100vh; display: grid; place-items: center; overflow: hidden; }
+  .expand-media { width: 60vw; height: 60vh; object-fit: cover; border-radius: 16px; transform-origin: 50% 50%; }
+  .spiral-wrap { height: 200vh; }
+  .spiral-sticky { position: sticky; top: 0; height: 100vh; display: grid; place-items: center; overflow: hidden; }
+  .spiral { position: relative; width: 10px; height: 10px; }
+  .sp { position: absolute; left: -60px; top: -40px; width: 120px; height: 80px; border-radius: 8px; object-fit: cover; }
+  footer { height: 60vh; }
+</style>
+</head>
+<body>
+<section class="hero"><h1 class="hero-title">Change the scene</h1></section>
+<section style="height:40vh"><button class="btn-pulse cta" type="button">Send a signal</button></section>
+<section class="gallery"><div class="track"><div class="slide"></div><div class="slide"></div><div class="slide"></div><div class="slide"></div><div class="slide"></div><div class="slide"></div></div></section>
+<section class="dark-zone" id="dark">Night mode</section>
+<section class="scrub-zone" id="scrub">Dawn</section>
+<section class="zoom-wrap"><div class="zoom-sticky"><div class="zoom-word">ENTER</div></div></section>
+<section class="expand-wrap"><div class="expand-sticky"><img class="expand-media" alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='9'><rect width='16' height='9' fill='%23556b8d'/><circle cx='8' cy='4.5' r='3' fill='%23e8c070'/></svg>"></div></section>
+<section class="spiral-wrap"><div class="spiral-sticky"><div class="spiral"><img class="sp" alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><rect width='12' height='8' fill='%23a0522d'/></svg>"><img class="sp" alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><rect width='12' height='8' fill='%23a0522d'/></svg>"><img class="sp" alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><rect width='12' height='8' fill='%23a0522d'/></svg>"><img class="sp" alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><rect width='12' height='8' fill='%23a0522d'/></svg>"><img class="sp" alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><rect width='12' height='8' fill='%23a0522d'/></svg>"><img class="sp" alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><rect width='12' height='8' fill='%23a0522d'/></svg>"><img class="sp" alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><rect width='12' height='8' fill='%23a0522d'/></svg>"><img class="sp" alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><rect width='12' height='8' fill='%23a0522d'/></svg>"><img class="sp" alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><rect width='12' height='8' fill='%23a0522d'/></svg>"></div></div></section>
+<footer></footer>
+<script>
+  // click feedback (no navigation)
+  const btn = document.querySelector('.btn-pulse');
+  btn.addEventListener('click', () => { btn.classList.add('is-clicked'); setTimeout(() => btn.classList.remove('is-clicked'), 600); });
+
+  // draggable gallery with inertia
+  const track = document.querySelector('.track');
+  let x = 0, v = 0, down = false, lastX = 0, lastT = 0, raf = 0;
+  const minX = () => Math.min(0, innerWidth - track.scrollWidth);
+  const apply = () => (track.style.transform = `translate3d(${x}px,0,0)`);
+  track.addEventListener('pointerdown', (e) => { down = true; lastX = e.clientX; lastT = performance.now(); v = 0; cancelAnimationFrame(raf); track.style.cursor = 'grabbing'; });
+  addEventListener('pointermove', (e) => {
+    if (!down) return;
+    const now = performance.now();
+    const dx = e.clientX - lastX;
+    x = Math.max(minX() - 80, Math.min(80, x + dx));
+    v = dx / Math.max(1, now - lastT) * 16;
+    lastX = e.clientX; lastT = now; apply();
+  });
+  addEventListener('pointerup', () => {
+    if (!down) return;
+    down = false; track.style.cursor = 'grab';
+    const glide = () => {
+      x += v; v *= 0.93;
+      x = Math.max(minX(), Math.min(0, x));
+      apply();
+      if (Math.abs(v) > 0.2) raf = requestAnimationFrame(glide);
+    };
+    raf = requestAnimationFrame(glide);
+  });
+
+  // décor: snap to dark when #dark enters (CSS transition), scrubbed dawn colour, zoom-through, media expand
+  const dark = document.getElementById('dark');
+  const scrub = document.getElementById('scrub');
+  const zoom = document.querySelector('.zoom-wrap'), word = document.querySelector('.zoom-word');
+  const exp = document.querySelector('.expand-wrap'), media = document.querySelector('.expand-media');
+  const mix = (a, b, p) => a.map((v, i) => Math.round(v + (b[i] - v) * p));
+  function onScroll() {
+    const y = scrollY, vh = innerHeight;
+    const dTop = dark.offsetTop, sTop = scrub.offsetTop;
+    const inDark = y + vh * 0.5 >= dTop && y + vh * 0.5 < sTop;
+    document.body.classList.toggle('is-dark', inDark);
+    // scrubbed: from the dark night to a warm dawn across the scrub zone
+    const p = Math.max(0, Math.min(1, (y + vh * 0.5 - sTop) / (scrub.offsetHeight * 0.8)));
+    if (y + vh * 0.5 >= sTop) {
+      document.body.style.transition = 'none';
+      const c = mix([16, 18, 22], [246, 196, 142], p);
+      document.body.style.backgroundColor = `rgb(${c.join(',')})`;
+    } else {
+      document.body.style.transition = '';
+      document.body.style.backgroundColor = '';
+    }
+    const zp = Math.max(0, Math.min(1, (y - zoom.offsetTop) / (zoom.offsetHeight - vh)));
+    word.style.transform = `scale(${1 + zp * zp * 7})`;
+    const ep = Math.max(0, Math.min(1, (y - exp.offsetTop) / (exp.offsetHeight - vh)));
+    media.style.transform = `scale(${0.6 + ep * 1.1})`;
+  }
+  // spiral of images, rotating as a whole with the scroll
+  const spiral = document.querySelector('.spiral'), spw = document.querySelector('.spiral-wrap');
+  document.querySelectorAll('.sp').forEach((im, i) => {
+    const a = (i * 50 * Math.PI) / 180, r = 40 + i * 32;
+    im.style.transform = `translate(${Math.cos(a) * r}px, ${Math.sin(a) * r}px) rotate(${i * 50}deg)`;
+  });
+  const onSpiral = () => {
+    const p = Math.max(0, Math.min(1, (scrollY - spw.offsetTop) / (spw.offsetHeight - innerHeight)));
+    spiral.style.transform = `rotate(${p * 180}deg)`;
+  };
+  addEventListener('scroll', onSpiral, { passive: true });
+  addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+</script>
+</body>
+</html>

@@ -15,7 +15,8 @@ Goal: write DESIGN_DNA.md and dna.json at each pack root. They capture the essen
 studio can produce NEW, ORIGINAL sites of the same standard — not copy this one.
 
 Read, in this order: SPEC.md, design/tokens.json, design/typography.md, design/grid.md,
-structure/sections.json, structure/content.md, motion/scroll-system.json, motion/timeline-intro.json,
+structure/sections.json, structure/content.md, structure/compositions.json (if present), motion/scroll-system.json,
+motion/scene.json (décor rhythm and colour changes), motion/timeline-intro.json,
 every motion/effects/*.json, webgl/three-scene.md and webgl/*.md if present, perf.json.
 LOOK at the reference images (reference/1440/*.png, reference/390/*.png, press/, toggle/, hover/):
 describe what you see — composition, imagery, light, texture.
@@ -26,7 +27,8 @@ DESIGN_DNA.md sections:
 3. Composition — grid (columns, margins, gutters by breakpoint), whitespace ratio, density, vertical rhythm,
    section archetypes in order (e.g. "full-bleed 3D hero → manifesto → logo rail → feature grid").
 4. Typography — families and roles, fluid scale (clamp formulas), weights, tracking, case, mono/label usage.
-5. Colour — roles (background, text, accent, surfaces), share of surface, contrast, light/dark rhythm across sections.
+5. Colour — roles (background, text, accent, surfaces), share of surface, contrast, light/dark rhythm across
+   sections and the décor changes along the scroll (motion/scene.json: what changes, where, scrubbed or timed).
 6. Imagery, 3D and light — art style, materials, lighting, camera language, fog, post-processing, textures.
 7. Motion personality — tempo (typical durations), easing families (exact names/curves), stagger habits,
    scroll feel (smooth-scroll lerp / duration), intro sequence, hover / press / menu behaviours, 3D motion.

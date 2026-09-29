@@ -4,6 +4,7 @@
 // Shared by the extension dashboard (File System Access) and cli/dip-library.js (node:fs) through a small
 // async adapter: { list(dir) → [{ name, kind: 'file'|'directory' }], readText(path) → string|null, writeText(path, text) }.
 import { COMMANDS } from './commands.js';
+import { SKILLS } from './skills.js';
 import { EFFECT_TYPES } from './taxonomy.js';
 
 const domainOf = (u) => {
@@ -46,7 +47,7 @@ export async function summarizePack(fsa, dir) {
   for (const e of cards) {
     if (!e) continue;
     const an = e.animation || {};
-    effects.push({ id: e.id, type: e.effect_type, trigger: e.trigger, technique: e.technique, source: e.source, section: e.section, duration: an.duration ?? null, ease: an.ease || null, stagger: typeof an.stagger === 'number' ? an.stagger : null, confidence: e.confidence, frames: (e.reference && e.reference.frames) || [] });
+    effects.push({ id: e.id, type: e.effect_type, trigger: e.trigger, technique: e.technique, source: e.source, section: e.section, duration: an.duration ?? null, ease: an.ease || null, stagger: typeof an.stagger === 'number' ? an.stagger : null, confidence: e.confidence, preview: e.preview || ((e.reference && e.reference.frames) || [])[0] || null, curve: !!(e.reference && e.reference.curve) });
   }
   const names = new Set(files.map((f) => f.name));
   const name = dir.split('/').pop();
@@ -60,6 +61,7 @@ export async function summarizePack(fsa, dir) {
     mode: m.mode,
     tier: m.tier,
     complexity: m.complexity,
+    analyzerVersion: m.analyzerVersion || '0.0.0',
     stack: (m.detectedStack || []).filter((s) => s.confidence >= 0.6).map((s) => s.name),
     threeD: (m.webgl || []).length > 0 || (m.detectedStack || []).some((s) => s.name === 'three' && s.confidence >= 0.6),
     scroll: { type: (scroll && scroll.type) || null, lerp: (scroll && scroll.measuredLerp) || null },
@@ -115,11 +117,12 @@ export function effectsMd(packs) {
 // Rebuild the indexes and (re)write the Claude Code commands at the library root.
 export async function writeIndex(fsa) {
   const packs = await listPacks(fsa);
-  const slim = packs.map(({ effects, ...p }) => ({ ...p, effects: effects.map(({ frames, ...e }) => e) }));
+  const slim = packs.map(({ effects, ...p }) => ({ ...p, effects: effects.map(({ preview, curve, ...e }) => e) }));
   await fsa.writeText('index.json', JSON.stringify({ generator: 'DIP library', updated: new Date().toISOString(), packs: slim }, null, 2));
   await fsa.writeText('LIBRARY.md', libraryMd(packs));
   await fsa.writeText('EFFECTS.md', effectsMd(packs));
   for (const [name, body] of Object.entries(COMMANDS)) await fsa.writeText('.claude/commands/' + name, body);
+  for (const [name, body] of Object.entries(SKILLS)) await fsa.writeText('.claude/skills/' + name, body);
   return packs;
 }
 
@@ -159,8 +162,15 @@ export function rankReferences(packs, brief) {
 }
 
 // Library-level suggestions: what to do next to be able to create.
-export function librarySuggestions(packs) {
+export const versionLess = (a, b) => {
+  const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0);
+  return false;
+};
+export function librarySuggestions(packs, currentVersion) {
   const out = [];
+  const old = currentVersion ? packs.filter((p) => versionLess(p.analyzerVersion, currentVersion)) : [];
+  if (old.length) out.push({ kind: 'scan', action: 'redissect', text: `${old.length} site(s) analysé(s) avec une ancienne version de DIP : redissèque-les pour obtenir les nouvelles mesures (survols CSS, clics, glisser, décors, compositions d’images…). L’ADN déjà écrit est conservé.` });
   if (packs.length < 3) out.push({ kind: 'scan', text: `Scanne au moins ${3 - packs.length} site(s) premium de plus : il faut 3 références pour mélanger sans copier.` });
   const noDna = packs.filter((p) => !p.hasDna);
   if (noDna.length) out.push({ kind: 'dna', text: `${noDna.length} pack(s) sans ADN : écris-les avant de créer.`, command: '/dip-dna ' + noDna.map((p) => p.path).join(' ') });

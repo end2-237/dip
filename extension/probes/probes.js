@@ -467,8 +467,15 @@
     const q = (v) => Math.round(v * 10000) / 10000;
     const vals = [q(p.x), q(p.y), q(p.z), q(r.x), q(r.y), q(r.z), q(sc.x), q(sc.y), q(sc.z), o.isPerspectiveCamera ? q(o.fov) : null];
     const sig = vals.join(',');
-    if (sig === tk.last || tk.t.length >= 2500) return;
+    if (sig === tk.last) return;
     tk.last = sig;
+    // long scans: halve the resolution instead of dropping the end (pointer / drag phases come late)
+    tk.n = (tk.n || 0) + 1;
+    if (tk.n % (tk.stride || 1)) return;
+    if (tk.t.length >= 2500) {
+      for (const k of ['t', 's', 'mx', 'my', 'px', 'py', 'pz', 'rx', 'ry', 'rz', 'sx', 'sy', 'sz', 'fov']) tk[k] = tk[k].filter((_, i) => i % 2 === 0);
+      tk.stride = (tk.stride || 1) * 2;
+    }
     tk.t.push(Math.round(t));
     tk.s.push(s);
     tk.mx.push(mouse.x);
@@ -660,7 +667,8 @@
   }
 
   // ================================================================ P7 — listeners & routing
-  const listeners = { hoverEls: new Set(), global: {}, wheelTargets: 0 };
+  const listeners = { hoverEls: new Set(), dragEls: new Set(), global: {}, wheelTargets: 0 };
+  const DRAG_EVTS = new Set(['pointerdown', 'mousedown', 'touchstart', 'dragstart']);
   const HOVER_EVTS = new Set(['mouseenter', 'mouseover', 'pointerenter', 'pointerover', 'mousemove', 'pointermove', 'mouseleave']);
   wrapMethod(EventTarget.prototype, 'addEventListener', (orig) =>
     function addEventListener(type) {
@@ -669,6 +677,7 @@
           if (this === W || this === D || this === D.documentElement || this === D.body) listeners.global[type] = (listeners.global[type] || 0) + 1;
           else if (this && this.nodeType === 1 && listeners.hoverEls.size < 2000) listeners.hoverEls.add(new WeakRef(this));
         } else if (type === 'wheel') listeners.wheelTargets++;
+        else if (DRAG_EVTS.has(type) && this && this.nodeType === 1 && listeners.dragEls.size < 500) listeners.dragEls.add(new WeakRef(this));
       } catch (e) {
         /* never break */
       }
@@ -1116,7 +1125,11 @@
       rect = [r2(b.top), r2(b.left)];
     }
     const rsig = rect ? rect.join(',') : '';
-    if (sig + rsig === tk.lastSig) return;
+    if (sig + rsig === tk.lastSig) {
+      tk.idle = (tk.idle || 0) + 1;
+      return;
+    }
+    tk.idle = 0;
     tk.lastSig = sig + rsig;
     if (tk.t.length > 6000) return;
     const d = decompose(cs.transform);
@@ -1183,7 +1196,11 @@
         const s = scrollPos();
         if (rec.frameN % 60 === 1) rebuildPool();
         // sample tracked
+        // tracks at rest for > ~1.5 s are read every 3rd frame (long scans track hundreds of elements)
+        let k = 0;
         for (const tk of rec.tracked.values()) {
+          k++;
+          if (tk.idle > 90 && (rec.frameN + k) % 3) continue;
           const el = tk.el.deref();
           if (!el || !el.isConnected) continue;
           sampleTrack(tk, el, N.getCS(el), t, s);
@@ -1891,41 +1908,279 @@
 
   // ================================================================ P7 — interactives & hover snapshots
   const HOVER_STYLE_PROPS = ['color', 'backgroundColor', 'borderTopColor', 'transform', 'opacity', 'boxShadow', 'filter', 'clipPath', 'letterSpacing', 'textDecorationLine', 'width', 'height', 'borderRadius', 'backgroundSize', 'scale', 'translate'];
+  // Elements styled by CSS :hover rules (titles, images, cards that are not links): the part of each selector
+  // before ":hover" is the element the pointer must enter. Cross-origin sheets cannot be read and are skipped.
+  function hoverRuleTargets(limit) {
+    const found = new Set();
+    const roots = new Set();
+    const walk = (rules, depth) => {
+      if (!rules || depth > 4) return;
+      for (const r of rules) {
+        if (roots.size > 400) return;
+        if (r.cssRules && !r.selectorText) walk(r.cssRules, depth + 1);
+        const sel = r.selectorText;
+        if (!sel || sel.indexOf(':hover') < 0) continue;
+        for (const part of sel.split(',')) {
+          const i = part.indexOf(':hover');
+          if (i < 0) continue;
+          const root = part.slice(0, i).trim().replace(/[>+~]\s*$/, '').trim();
+          if (root && !/^(html|body|\*|a|button)$/.test(root)) roots.add(root);
+        }
+      }
+    };
+    for (const sh of D.styleSheets) {
+      try {
+        walk(sh.cssRules, 0);
+      } catch (e) {
+        /* cross-origin stylesheet */
+      }
+    }
+    for (const root of roots) {
+      try {
+        for (const el of D.querySelectorAll(root)) {
+          found.add(el);
+          if (found.size >= (limit || 300)) return found;
+        }
+      } catch (e) {
+        /* selector with pseudo-elements the engine cannot query */
+      }
+    }
+    return found;
+  }
   function listInteractive(max) {
     const out = [];
     try {
-      const set = new Set(D.querySelectorAll('a[href], button, [role="button"], [data-cursor], [data-magnetic], [class*="magnetic"], [class*="btn"], [class*="button"], [class*="card"]'));
+      const set = new Map();
+      const add = (el, why) => set.has(el) || set.set(el, why);
+      for (const el of D.querySelectorAll('a[href], button, [role="button"], [data-cursor], [data-magnetic], [class*="magnetic"], [class*="btn"], [class*="button"], [class*="card"]')) add(el, 'tag');
       for (const ref of listeners.hoverEls) {
         const el = ref.deref();
-        if (el && el.isConnected) set.add(el);
+        if (el && el.isConnected) set.set(el, 'listener');
       }
-      const vw = W.innerWidth;
+      for (const el of hoverRuleTargets(300)) if (!set.has(el) || set.get(el) === 'tag') set.set(el, 'css');
+      // big titles near the top of the page often react to the pointer (split letters, scramble, skew…)
+      for (const el of D.querySelectorAll('h1, h2, [class*="title"], [class*="heading"]')) add(el, 'heading');
+      const vw = W.innerWidth, vh = W.innerHeight;
       const items = [];
-      for (const el of set) {
+      for (const [el, why] of set) {
         const cs = N.getCS(el);
         if (!visible(el, cs) || cs.pointerEvents === 'none') continue;
         const r = absRect(el);
         if (r.w < 8 || r.h < 8 || r.w > vw * 1.2) continue;
         if (N.getCS(el).position === 'fixed' && r.w > vw * 0.9) continue;
-        items.push({ el, r });
+        const heading = /^h[1-4]$/.test(el.localName) || why === 'heading';
+        // priority: evidence of a hover effect, then position (first screens first), then size
+        const score = (why === 'listener' ? 3 : why === 'css' ? 2.5 : heading ? 1.2 : 1) * (r.y < vh * 1.5 ? 2 : r.y < vh * 3 ? 1.3 : 1) * Math.log10(10 + r.w * r.h);
+        items.push({ el, r, why, heading, score });
       }
-      // prioritise large + early elements, dedupe near-identical siblings (same selector class shape)
       const shape = new Map();
-      items.sort((a, b) => b.r.w * b.r.h - a.r.w * a.r.h);
+      items.sort((a, b) => b.score - a.score);
       for (const it of items) {
         const k = it.el.localName + '.' + goodClasses(it.el).join('.') + '|' + Math.round(it.r.w / 10) + 'x' + Math.round(it.r.h / 10);
         const c = shape.get(k) || 0;
         if (c >= 2) continue;
+        // skip an element inside one already kept with the same evidence (the parent covers it)
+        if (out.some((o) => o.why === it.why && o._el.contains(it.el) && it.why !== 'listener')) continue;
         shape.set(k, c + 1);
-        out.push({ selector: selector(it.el), nid: nid(it.el), tag: it.el.localName, text: (it.el.textContent || '').trim().slice(0, 40), rect: it.r, listener: Array.from(listeners.hoverEls).some((w) => w.deref() === it.el) });
+        out.push({ _el: it.el, selector: selector(it.el), nid: nid(it.el), tag: it.el.localName, text: (it.el.textContent || '').trim().slice(0, 40), rect: it.r, why: it.why, heading: it.heading, listener: it.why === 'listener' });
         if (out.length >= (max || 40)) break;
       }
       out.sort((a, b) => a.rect.y - b.rect.y);
+      for (const o of out) delete o._el;
     } catch (e) {
       journal.error('interactive', e);
     }
     return out;
   }
+
+  // Draggable galleries / sliders: carousel libraries, grab cursors, pointer-down listeners on wide elements.
+  function listDraggables(max) {
+    const out = [];
+    try {
+      const cands = new Map();
+      const LIB = /swiper|embla|flickity|keen-slider|splide|glide|slick|carousel|slider|drag|gallery/i;
+      for (const el of D.querySelectorAll('[class]')) {
+        const cls = typeof el.className === 'string' ? el.className : '';
+        if (LIB.test(cls)) cands.set(el, 'class');
+      }
+      for (const ref of listeners.dragEls) {
+        const el = ref.deref();
+        if (el && el.isConnected && el !== D.body && el !== D.documentElement) cands.set(el, 'listener');
+      }
+      const vw = W.innerWidth;
+      const items = [];
+      for (const [el, why] of cands) {
+        const cs = N.getCS(el);
+        if (!visible(el, cs) || cs.pointerEvents === 'none') continue;
+        if (el.closest('a, button, input, select, textarea, [contenteditable]')) continue;
+        const r = absRect(el);
+        if (r.w < vw * 0.35 || r.h < 80) continue;
+        const grab = /grab/.test(cs.cursor) || /grab/.test(N.getCS(el.firstElementChild || el).cursor);
+        const overflow = el.scrollWidth > el.clientWidth + 20 || [...el.children].some((c) => c.getBoundingClientRect().right > W.innerWidth + 10);
+        if (!grab && !overflow && why !== 'listener') continue;
+        items.push({ el, r, why, grab, overflow, score: (grab ? 3 : 1) + (overflow ? 2 : 0) + (why === 'listener' ? 1 : 0) });
+      }
+      items.sort((a, b) => b.score - a.score);
+      for (const it of items) {
+        if (out.some((o) => o._el.contains(it.el) || it.el.contains(o._el))) continue;
+        out.push({ _el: it.el, selector: selector(it.el), nid: nid(it.el), rect: it.r, why: it.why, grab: it.grab, overflow: it.overflow });
+        if (out.length >= (max || 3)) break;
+      }
+      for (const o of out) delete o._el;
+    } catch (e) {
+      journal.error('draggables', e);
+    }
+    return out;
+  }
+  // first child position + scrollLeft of a drag container (how far the content travelled)
+  function dragState(id) {
+    const el = (typeof id === 'string' && id.startsWith('n') && elByNid(id)) || D.querySelector(id);
+    if (!el) return null;
+    const kids = [...el.querySelectorAll('*')].filter((c) => c.getBoundingClientRect().width > 40).slice(0, 40);
+    const first = kids[0];
+    return { scrollLeft: el.scrollLeft, x: first ? first.getBoundingClientRect().left : 0, transform: N.getCS(el.firstElementChild || el).transform };
+  }
+  // navigation guard for click / drag probes: links to other pages do not leave the page
+  let navGuard = null;
+  function guardNav(on) {
+    if (on && !navGuard) {
+      navGuard = (e) => {
+        const a = e.target && e.target.closest && e.target.closest('a[href]');
+        if (!a) return;
+        const href = a.getAttribute('href') || '';
+        if (href.startsWith('javascript:')) return;
+        e.preventDefault(); // also "#" links: their jump to the top would read as a click effect
+      };
+      N.addEL.call(W, 'click', navGuard, true);
+      N.addEL.call(W, 'submit', navGuard, true);
+    } else if (!on && navGuard) {
+      W.removeEventListener('click', navGuard, true);
+      W.removeEventListener('submit', navGuard, true);
+      navGuard = null;
+    }
+    return !!navGuard;
+  }
+  // Buttons whose click is not a navigation nor a menu / accordion toggle (feedback: ripple, bounce, flash…)
+  function listClickables(max) {
+    const out = [];
+    try {
+      const vh = W.innerHeight;
+      for (const el of D.querySelectorAll('button, [role="button"], [class*="btn"], [class*="button"]')) {
+        if (el.hasAttribute('aria-expanded') || el.hasAttribute('aria-controls') || el.getAttribute('role') === 'tab' || el.closest('form') || el.type === 'submit') continue;
+        if (/burger|hamburger|menu|toggle|close|nav/i.test((typeof el.className === 'string' ? el.className : '') + ' ' + (el.getAttribute('aria-label') || ''))) continue;
+        const cs = N.getCS(el);
+        if (!visible(el, cs)) continue;
+        const r = absRect(el);
+        if (r.w < 20 || r.h < 14 || r.w > W.innerWidth * 0.8) continue;
+        out.push({ selector: selector(el), nid: nid(el), tag: el.localName, text: (el.textContent || '').trim().slice(0, 30), rect: r, early: r.y < vh * 2 });
+      }
+      out.sort((a, b) => (b.early - a.early) || a.rect.y - b.rect.y);
+    } catch (e) {
+      journal.error('clickables', e);
+    }
+    return out.slice(0, max || 6);
+  }
+
+  // Multi-image compositions: parents holding ≥ 4 visual children (img / video / canvas / background images).
+  // Positions include transforms (getBoundingClientRect), so spirals / fans built with transforms are seen.
+  function isVisualEl(el) {
+    if (/^(img|video|canvas|picture|svg)$/.test(el.localName)) return true;
+    const bi = N.getCS(el).backgroundImage;
+    if (bi && bi !== 'none' && /url\(/.test(bi)) return true;
+    return el.children.length <= 2 && !!el.querySelector(':scope > img, :scope > picture, :scope > video, :scope > canvas');
+  }
+  function rotOf(el) {
+    const t = N.getCS(el).transform;
+    const m = /matrix\(([^)]+)\)/.exec(t || '');
+    if (!m) return 0;
+    const p = m[1].split(',').map(parseFloat);
+    return Math.round((Math.atan2(p[1], p[0]) * 180) / Math.PI * 10) / 10;
+  }
+  function mediaGroups(max) {
+    const out = [];
+    try {
+      const parents = new Map();
+      for (const el of D.querySelectorAll('img, video, canvas, picture, [style*="background-image"], [class*="img"], [class*="image"], [class*="media"], [class*="photo"], [class*="card"]')) {
+        if (!isVisualEl(el)) continue;
+        // the item = the direct child of the composition container (walk up while it is the only visual inside)
+        let item = el.localName === 'img' && el.parentElement && el.parentElement.localName === 'picture' ? el.parentElement : el;
+        while (item.parentElement && item.parentElement !== D.body && item.parentElement.children.length === 1) item = item.parentElement;
+        const p = item.parentElement;
+        if (!p || p === D.body) continue;
+        if (!parents.has(p)) parents.set(p, new Set());
+        parents.get(p).add(item);
+      }
+      const sx = W.scrollX, sy = W.scrollY;
+      for (const [p, set] of parents) {
+        if (set.size < 4) continue;
+        const items = [...set].filter((c) => visible(c, N.getCS(c)));
+        if (items.length < 4) continue;
+        const kids = items.slice(0, 40).map((c) => {
+          const r = c.getBoundingClientRect();
+          return { nid: nid(c), x: Math.round(r.left + r.width / 2 + sx), y: Math.round(r.top + r.height / 2 + sy), w: Math.round(r.width), h: Math.round(r.height), rot: rotOf(c), z: parseInt(N.getCS(c).zIndex) || 0, index: Array.prototype.indexOf.call(p.children, c) };
+        });
+        const pr = p.getBoundingClientRect();
+        out.push({ selector: selector(p), nid: nid(p), rect: { x: Math.round(pr.left + sx), y: Math.round(pr.top + sy), w: Math.round(pr.width), h: Math.round(pr.height) }, rot: rotOf(p), position: N.getCS(p).position, children: kids });
+        if (out.length >= (max || 12)) break;
+      }
+    } catch (e) {
+      journal.error('media-groups', e);
+    }
+    return out;
+  }
+
+  // Scene / décor sample: what fills the viewport right now (dominant background colour, luminance,
+  // media share, theme markers). Sampled along the scroll to find décor changes.
+  function parseRgb(c) {
+    const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/.exec(c || '');
+    return m ? [+m[1], +m[2], +m[3], m[4] == null ? 1 : +m[4]] : null;
+  }
+  function sceneSample() {
+    const vw = W.innerWidth, vh = W.innerHeight;
+    const counts = new Map();
+    let media = 0, n = 0;
+    for (let gy = 1; gy <= 4; gy++)
+      for (let gx = 1; gx <= 5; gx++) {
+        n++;
+        const els = D.elementsFromPoint((gx / 6) * vw, (gy / 5) * vh) || [];
+        let col = null;
+        for (const el of els) {
+          if (el === ownCanvas) continue;
+          const tag = el.localName;
+          if (tag === 'canvas' || tag === 'video' || tag === 'img' || tag === 'picture' || tag === 'iframe') {
+            media++;
+            col = 'media';
+            break;
+          }
+          const cs = N.getCS(el);
+          if (cs.backgroundImage && cs.backgroundImage !== 'none' && !/gradient/.test(cs.backgroundImage)) {
+            media++;
+            col = 'media';
+            break;
+          }
+          const c = parseRgb(cs.backgroundColor);
+          if (c && c[3] > 0.6) {
+            col = '#' + c.slice(0, 3).map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+            break;
+          }
+        }
+        if (!col) {
+          const c = parseRgb(N.getCS(D.body).backgroundColor) || parseRgb(N.getCS(D.documentElement).backgroundColor);
+          col = c && c[3] > 0 ? '#' + c.slice(0, 3).map((v) => Math.round(v).toString(16).padStart(2, '0')).join('') : '#ffffff';
+        }
+        if (col !== 'media') counts.set(col, (counts.get(col) || 0) + 1);
+      }
+    let bg = null, best = 0;
+    for (const [c, k] of counts) if (k > best) (best = k), (bg = c);
+    const rgb = bg ? [1, 3, 5].map((i) => parseInt(bg.slice(i, i + 2), 16) / 255) : [1, 1, 1];
+    const lum = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+    const de = D.documentElement;
+    const rc = parseRgb(N.getCS(D.body).backgroundColor);
+    const rootC = rc && rc[3] > 0.05 ? rc : parseRgb(N.getCS(de).backgroundColor);
+    const root = rootC ? '#' + rootC.slice(0, 3).map((v) => Math.round(v).toString(16).padStart(2, '0')).join('') : null;
+    return { s: scrollPos(), t: rel(), bg, root, bgShare: Math.round((best / n) * 100) / 100, lum: Math.round(lum * 1000) / 1000, media: Math.round((media / n) * 100) / 100, theme: [de.className, de.getAttribute('data-theme'), D.body.className, D.body.getAttribute('data-theme')].filter(Boolean).join(' ').slice(0, 160) };
+  }
+
   function elByNid(id) {
     const w = byNid.get(id);
     return w ? w.deref() : null;
@@ -2762,7 +3017,7 @@
     const tracks = [];
     for (const tk of rec.tracked.values()) {
       if (tk.t.length < 2) continue;
-      const { el, lastSig, lastClip, lastFilter, lastExtra, wantRect, ...rest } = tk;
+      const { el, lastSig, lastClip, lastFilter, lastExtra, wantRect, idle, ...rest } = tk;
       // keep only extra properties that really changed during the capture
       const byProp = {};
       for (const [i, p, v] of rest.extra || []) (byProp[p] = byProp[p] || []).push([i, v]);
@@ -2859,6 +3114,12 @@
     gsapState,
     threeState,
     threeGeometries,
+    listDraggables,
+    dragState,
+    guardNav,
+    listClickables,
+    sceneSample,
+    mediaGroups,
     glState,
     fetchBase64,
     threeMotion: () => [...three.tracks.values()].filter((tk) => tk.t.length > 2).map(({ last, ...tk }) => tk),

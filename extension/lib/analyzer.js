@@ -3,7 +3,7 @@
 import { fitEase, easeFn, bezierFor, normalizeEaseName, sampleEase } from './easing.js';
 import { TAXONOMY_VERSION, isKnownType } from './taxonomy.js';
 
-export const ANALYZER_VERSION = '0.1.0';
+export const ANALYZER_VERSION = '0.2.0';
 
 const GSAP_SPECIAL = new Set(['duration', 'delay', 'ease', 'stagger', 'repeat', 'yoyo', 'yoyoEase', 'repeatDelay', 'scrollTrigger', 'paused', 'overwrite', 'immediateRender', 'id', 'callbackScope', 'lazy', 'inherit', 'data', 'runBackwards', 'startAt', 'keyframes', 'defaults', 'smoothChildTiming', 'autoRemoveChildren', 'onComplete', 'onStart', 'onUpdate', 'onRepeat', 'onReverseComplete', 'onInterrupt', 'reversed', 'force3D', 'transformOrigin', 'clearProps', 'modifiers', 'snap']);
 
@@ -38,7 +38,8 @@ function phaseKind(p) {
   if (p.startsWith('bp')) return 'breakpoint';
   if (p === 'manual') return 'manual';
   if (p.startsWith('press')) return 'press';
-  if (p.startsWith('toggle')) return 'toggle';
+  if (p.startsWith('toggle') || p.startsWith('click')) return 'toggle';
+  if (p.startsWith('drag')) return 'drag';
   return p;
 }
 
@@ -278,7 +279,7 @@ function waapiEffects(cap, ctx) {
     const kind = a.type === 'CSSTransition' ? 'css-transition' : a.type === 'CSSAnimation' ? 'css-keyframes' : 'waapi';
     const scrollTl = /ScrollTimeline|ViewTimeline/.test(a.timeline || '');
     const phase = phaseKind(phaseAt(ctx.marks, a.t));
-    let trigger = scrollTl ? 'scroll-scrub' : tm.iterations === 'Infinity' || tm.iterations === Infinity || tm.iterations > 50 ? 'time-loop' : phase === 'manual' ? ctx.manualTrigger(a.t) : phase === 'press' ? 'press' : phase === 'toggle' ? 'click' : phase === 'hover' ? 'hover' : phase === 'scroll' ? 'scroll-enter' : 'load';
+    let trigger = scrollTl ? 'scroll-scrub' : tm.iterations === 'Infinity' || tm.iterations === Infinity || tm.iterations > 50 ? 'time-loop' : phase === 'manual' ? ctx.manualTrigger(a.t) : phase === 'press' ? 'press' : phase === 'toggle' ? 'click' : phase === 'drag' ? 'drag' : phase === 'hover' ? 'hover' : phase === 'scroll' ? 'scroll-enter' : 'load';
     let ease = tm.easing || 'linear';
     // CSS animations carry animation-timing-function on each keyframe
     const kfEase = (a.keyframes || []).map((k) => k.easing).find((e) => e && e !== 'linear');
@@ -420,8 +421,20 @@ function classifyDriver(tk, main, ctx) {
   const scrollRatio = changes ? withScroll / changes : 0;
   const mouseRatio = changes ? withMouse / changes : 0;
   const corrS = Math.abs(pearson(tk.s, v));
-  const corrMx = Math.abs(pearson(tk.mx, v));
-  const corrMy = Math.abs(pearson(tk.my, v));
+  let corrMx = Math.abs(pearson(tk.mx, v));
+  let corrMy = Math.abs(pearson(tk.my, v));
+  // lerped followers lag behind fast pointer sweeps: compare with a smoothed pointer too
+  if (Math.max(corrMx, corrMy) > 0.4 && Math.max(corrMx, corrMy) < 0.75) {
+    for (const tau of [80, 160, 320, 640]) {
+      const sm = (m) => {
+        const o = [m[0]];
+        for (let i = 1; i < m.length; i++) o.push(o[i - 1] + (1 - Math.exp(-Math.max(0, tk.t[i] - tk.t[i - 1]) / tau)) * (m[i] - o[i - 1]));
+        return o;
+      };
+      corrMx = Math.max(corrMx, Math.abs(pearson(sm(tk.mx), v)));
+      corrMy = Math.max(corrMy, Math.abs(pearson(sm(tk.my), v)));
+    }
+  }
   const isFixed = tk.position === 'fixed';
   if (isFixed && (corrMx > 0.9 || corrMy > 0.9) && mouseRatio > 0.6) return { driver: 'mouse', follow: true, corrMx: r2(corrMx), corrMy: r2(corrMy) };
   // loop: keeps changing across phases without scroll or mouse
@@ -625,7 +638,7 @@ function recorderEffects(cap, ctx, explainedNids) {
   for (const [, list] of groups) {
     list.sort((a, b) => (a.start || 0) - (b.start || 0));
     const m0 = list[0];
-    const trigger = m0.driver === 'scroll' ? 'scroll-scrub' : m0.driver === 'mouse' ? 'mouse-move' : m0.driver === 'loop' ? 'time-loop' : m0.phase === 'manual' ? ctx.manualTrigger(m0.start) : m0.phase === 'press' ? 'press' : m0.phase === 'toggle' ? 'click' : m0.phase === 'hover' ? 'hover' : m0.phase === 'scroll' ? 'scroll-enter' : 'load';
+    const trigger = m0.phase === 'drag' ? 'drag' : m0.driver === 'scroll' ? 'scroll-scrub' : m0.driver === 'mouse' ? 'mouse-move' : m0.driver === 'loop' ? 'time-loop' : m0.phase === 'manual' ? ctx.manualTrigger(m0.start) : m0.phase === 'press' ? 'press' : m0.phase === 'toggle' ? 'click' : m0.phase === 'drag' ? 'drag' : m0.phase === 'hover' ? 'hover' : m0.phase === 'scroll' ? 'scroll-enter' : 'load';
     const anim = { channels: m0.channels, values: m0.values };
     if (m0.driver === 'time') {
       anim.duration = r3(median(list.map((x) => x.duration)));
@@ -686,7 +699,7 @@ function hoverEffects(cap, ctx) {
       trigger: 'hover',
       effect_type: type,
       targets: dedupeTargets(list.map((x) => x.target)),
-      animation: { changes: h.diff.slice(0, 20), transition: h.transition, props, magnetic: h.magnetic || undefined },
+      animation: { changes: h.diff.slice(0, 20), transition: h.transition, props, magnetic: h.magnetic || undefined, sweep: h.sweep || undefined, cssRule: h.why === 'css' || undefined },
       shots: h.shots,
       t: h.t || 0,
     });
@@ -732,6 +745,21 @@ function classify(e, ctx) {
     if (a.channels && a.channels.includes('rotate')) return 'tilt-3d';
     return 'mouse-parallax';
   }
+  if (e.trigger === 'scroll-scrub' || e.trigger === 'scroll-enter') {
+    // growth: an element scaled until it (nearly) fills the viewport
+    const nums = [];
+    const sv = a.values && a.values.scale;
+    if (sv) for (const k of ['from', 'to', 'min', 'max', 'atStart', 'atEnd']) if (typeof sv[k] === 'number') nums.push(sv[k]);
+    for (const o of [a.to, a.from]) if (o && typeof o.scale === 'number') nums.push(o.scale);
+    if (nums.length >= 2) {
+      const lo = Math.min(...nums), hi = Math.max(...nums);
+      const r0 = (m && m.rect0) || (targets[0] && targets[0].rect);
+      const fills = r0 && r0.w && r0.w * (hi / Math.max(lo, 0.01)) >= ctx.vw * 0.9;
+      if (hi >= 2.5 || (hi / Math.max(lo, 0.01) >= 1.8 && fills && !media)) return 'zoom-through';
+      if (media && hi / Math.max(lo, 0.01) >= 1.25 && fills) return 'media-expand';
+    }
+    if (media && e.trigger === 'scroll-scrub' && /inset\(|clip-?path|clippath/.test(propsStr) && /inset\(0(px|%)?\)|inset\(0(px|%)? 0(px|%)?|none/.test(propsStr)) return 'media-expand';
+  }
   if (/clip-?path|clippath|inset\(|polygon\(/.test(propsStr)) return media ? 'image-reveal-clip' : 'image-reveal-clip';
   if (e.trigger === 'scroll-scrub') {
     if (a.channels && a.channels[0] === 'x' && a.values && a.values.x && Math.abs(a.values.x.max - a.values.x.min) > ctx.vw * 0.6) return 'horizontal-scroll-section';
@@ -744,6 +772,200 @@ function classify(e, ctx) {
   if (e.trigger === 'hover') return 'hover-state';
   if (e.trigger === 'route-change') return 'page-transition';
   return 'other';
+}
+
+// ------------------------------------------------------------------ scene / décor changes along the scroll
+const hexRgb = (h) => (h && /^#[0-9a-f]{6}$/i.test(h) ? [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)) : null);
+const cssHex = (c) => {
+  const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/.exec(c || '');
+  return m ? '#' + [m[1], m[2], m[3]].map((v) => Math.round(+v).toString(16).padStart(2, '0')).join('') : c;
+};
+function rgbDist(a, b) {
+  const x = hexRgb(a), y = hexRgb(b);
+  if (!x || !y) return a === b ? 0 : 999;
+  return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+}
+// Samples come from the scroll pass (sceneSample): dominant viewport background, body/html background,
+// theme classes. A décor change is animated when the root background or the theme changes, or when the
+// colour passes through intermediate values (scrubbed or transitioned); a plain boundary between two
+// sections of different colours is part of the page rhythm, not an effect.
+function analyzeScene(cap, ctx, vh) {
+  const raw = (cap.scene || []).filter((x) => x && x.bg);
+  const out = { timeline: [], shifts: [], rhythm: [] };
+  if (raw.length < 3) return out;
+  const pts = [];
+  let last = -1;
+  for (const x of raw) if (x.s >= last) (pts.push(x), (last = x.s));
+  let prev = null;
+  pts.forEach((x, i) => {
+    if (!prev || x.bg !== prev.bg || x.root !== prev.root || x.theme !== prev.theme || i % 6 === 0) out.timeline.push({ s: x.s, bg: x.bg, root: x.root, lum: x.lum, media: x.media });
+    prev = x;
+  });
+  for (const sec of ctx.sections) {
+    const inSec = pts.filter((x) => x.s + vh / 2 >= sec.top && x.s + vh / 2 < sec.top + sec.height);
+    if (!inSec.length) continue;
+    const cnt = new Map();
+    for (const x of inSec) cnt.set(x.bg, (cnt.get(x.bg) || 0) + 1);
+    const bg = [...cnt.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    out.rhythm.push({ section: sec.id, bg, lum: inSec[0].lum, media: Math.round((inSec.reduce((a, x) => a + (x.media || 0), 0) / inSec.length) * 100) / 100 });
+  }
+  let i = 0;
+  while (i < pts.length - 1) {
+    const a = pts[i], b = pts[i + 1];
+    if (rgbDist(a.bg, b.bg) < 8 && a.root === b.root && a.theme === b.theme) {
+      i++;
+      continue;
+    }
+    let j = i + 1;
+    const seen = new Set([a.bg, pts[j].bg]);
+    while (j < pts.length - 1 && rgbDist(pts[j].bg, pts[j + 1].bg) >= 8 && pts[j + 1].s - pts[j].s < vh) {
+      j++;
+      seen.add(pts[j].bg);
+    }
+    const z = pts[j];
+    const total = rgbDist(a.bg, z.bg);
+    const rootChanged = a.root !== z.root && rgbDist(a.root, z.root) > 30;
+    const themeChanged = a.theme !== z.theme;
+    const gradual = seen.size >= 4;
+    if (total > 40 && (rootChanged || themeChanged || gradual)) {
+      out.shifts.push({
+        from: a.bg,
+        to: z.bg,
+        lumFrom: a.lum,
+        lumTo: z.lum,
+        startScroll: Math.round(a.s),
+        endScroll: Math.round(z.s),
+        t: z.t,
+        mode: gradual && z.s - a.s > 150 ? 'scrub' : 'transition',
+        via: rootChanged ? 'body background' : themeChanged ? 'theme class' : 'section background',
+        theme: themeChanged ? { from: a.theme, to: z.theme } : undefined,
+        steps: seen.size,
+      });
+    }
+    i = j;
+  }
+  // one continuous change split in pieces (e.g. a class removed at the start of a scrub) → one shift
+  const merged = [];
+  for (const sh of out.shifts) {
+    const p = merged[merged.length - 1];
+    if (p && sh.startScroll - p.endScroll <= 150) {
+      p.to = sh.to;
+      p.lumTo = sh.lumTo;
+      p.endScroll = sh.endScroll;
+      p.steps += sh.steps;
+      if (sh.via === 'body background') p.via = sh.via;
+      if (sh.theme) p.theme = { from: p.theme ? p.theme.from : sh.theme.from, to: sh.theme.to };
+    } else merged.push({ ...sh });
+  }
+  // scrubbed or timed? the scan parked the page mid-change and waited: an intermediate colour at rest = scrub
+  for (const sh of merged) {
+    const chk = (cap.sceneChecks || []).find((c) => c.mid >= sh.startScroll - 5 && c.mid <= sh.endScroll + 5);
+    if (chk && chk.bg) sh.mode = rgbDist(chk.bg, sh.from) > 25 && rgbDist(chk.bg, sh.to) > 25 ? 'scrub' : 'transition';
+    else if (sh.theme) sh.mode = 'transition';
+  }
+  out.shifts = merged;
+  return out;
+}
+function sceneEffects(scene, ctx, vh) {
+  return scene.shifts.map((sh) => ({
+    _kind: 'scene',
+    source: 'measured:scene',
+    confidence: sh.via === 'section background' ? 0.65 : 0.8,
+    technique: sh.mode === 'scrub' ? 'gsap-scrolltrigger' : 'css-transition',
+    trigger: sh.mode === 'scrub' ? 'scroll-scrub' : 'scroll-enter',
+    effect_type: 'scene-color-shift',
+    targets: [{ selector: sh.via === 'body background' ? 'body' : sh.via === 'theme class' ? 'html' : '[data-dip-scene]' }],
+    section: sectionFor(ctx.sections, (sh.startScroll + sh.endScroll) / 2 + vh * 0.5),
+    animation: sh,
+    startScroll: sh.startScroll,
+    t: sh.t || 0,
+  }));
+}
+
+// ------------------------------------------------------------------ multi-image compositions (spiral, orbit, stack, fan…)
+function spearman(a, b) {
+  const rank = (v) => {
+    const idx = v.map((x, i) => [x, i]).sort((p, q) => p[0] - q[0]);
+    const r = new Array(v.length);
+    idx.forEach(([, i], k) => (r[i] = k));
+    return r;
+  };
+  return pearson(rank(a), rank(b));
+}
+export function classifyLayout(children) {
+  const n = children.length;
+  if (n < 4) return null;
+  const kids = children.slice().sort((a, b) => a.index - b.index);
+  const cx = kids.reduce((a, k) => a + k.x, 0) / n, cy = kids.reduce((a, k) => a + k.y, 0) / n;
+  const size = median(kids.map((k) => Math.max(k.w, k.h))) || 1;
+  const r = kids.map((k) => Math.hypot(k.x - cx, k.y - cy));
+  const rMean = r.reduce((a, b) => a + b, 0) / n;
+  const rStd = Math.sqrt(r.reduce((a, b) => a + (b - rMean) ** 2, 0) / n);
+  const rots = kids.map((k) => k.rot || 0);
+  const rotSpread = Math.max(...rots) - Math.min(...rots);
+  const maxR = Math.max(...r);
+  const base = { count: n, center: [Math.round(cx), Math.round(cy)], itemSize: Math.round(size), rotations: rotSpread > 2 ? rots : undefined };
+  if (maxR < size * 0.8) {
+    if (rotSpread > 15 && Math.abs(spearman(kids.map((k) => k.index), rots)) > 0.8) return { layout: 'fan', ...base, rotationStep: Math.round((rotSpread / (n - 1)) * 10) / 10 };
+    return { layout: 'stack', ...base, offsets: kids.map((k) => [Math.round(k.x - cx), Math.round(k.y - cy)]) };
+  }
+  // rows / grids are ordinary layouts
+  const ys = new Set(kids.map((k) => Math.round(k.y / 20))), xs = new Set(kids.map((k) => Math.round(k.x / 20)));
+  if ((ys.size <= Math.ceil(n / 2) || xs.size <= Math.ceil(n / 2)) && rotSpread < 3) return { layout: 'grid', ...base };
+  const ang = kids.map((k) => Math.atan2(k.y - cy, k.x - cx));
+  const unwrapped = [ang[0]];
+  for (let i = 1; i < n; i++) {
+    let d = ang[i] - ang[i - 1];
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    unwrapped.push(unwrapped[i - 1] + d);
+  }
+  const dAng = unwrapped.slice(1).map((a, i) => a - unwrapped[i]);
+  const sameDir = Math.max(dAng.filter((d) => d > 0).length, dAng.filter((d) => d < 0).length) / dAng.length;
+  const turn = Math.abs(unwrapped[n - 1] - unwrapped[0]);
+  const deg = (x) => Math.round((x * 180) / Math.PI);
+  if (sameDir >= 0.8 && Math.abs(spearman(kids.map((k) => k.index), r)) > 0.8 && turn > Math.PI * 0.75)
+    return { layout: 'spiral', ...base, radius: [Math.round(Math.min(...r)), Math.round(maxR)], turns: Math.round((turn / (2 * Math.PI)) * 100) / 100, angleStep: deg(median(dAng.map(Math.abs))), direction: dAng.reduce((a, b) => a + b, 0) > 0 ? 'clockwise' : 'counter-clockwise' };
+  if (rStd / (rMean || 1) < 0.15 && sameDir >= 0.8 && turn > Math.PI) return { layout: 'circle', ...base, radius: Math.round(rMean), angleStep: deg(median(dAng.map(Math.abs))) };
+  return rotSpread > 8 ? { layout: 'collage', ...base } : { layout: 'scatter', ...base };
+}
+function mediaCompositions(cap, ctx, all) {
+  const groups = ((cap.breakpoints && (cap.breakpoints['1440'] || Object.values(cap.breakpoints)[0])) || {}).mediaGroups || [];
+  const tracks = new Map((((cap.motion && cap.motion.recorder) || {}).tracks || []).map((t) => [t.nid, t]));
+  const out = { compositions: [], effects: [] };
+  for (const g of groups) {
+    const lay = classifyLayout(g.children);
+    if (!lay) continue;
+    const members = new Set([g.nid, ...g.children.map((c) => c.nid)]);
+    const linked = all.filter((e) => (e.targets || []).some((t) => members.has(t.nid) || (tracks.get(t.nid) && members.has(tracks.get(t.nid).parentNid))));
+    const comp = { selector: g.selector, nid: g.nid, rect: g.rect, section: sectionFor(ctx.sections, g.rect.y), ...lay, animated: linked.length > 0 };
+    out.compositions.push(comp);
+    if (lay.layout === 'grid' && !linked.length) continue;
+    if (lay.layout === 'scatter' && !linked.length) continue;
+    // the most telling driver wins (a scrubbed rotation matters more than the images' own reveal)
+    const PRIO = ['scroll-scrub', 'mouse-move', 'drag', 'time-loop', 'hover', 'press', 'click', 'scroll-enter', 'load'];
+    const trig = linked.length ? linked.map((e) => e.trigger).sort((a, b) => PRIO.indexOf(a) - PRIO.indexOf(b))[0] : 'load';
+    const starts = linked.map((e) => e.t).filter((x) => x != null).sort((a, b) => a - b);
+    out.effects.push({
+      _kind: 'composition',
+      source: linked.length ? 'measured:composition' : 'measured:layout',
+      confidence: linked.length ? 0.75 : 0.6,
+      technique: linked.find((e) => e.technique) ? linked.find((e) => e.technique).technique : 'css-transform',
+      trigger: trig,
+      effect_type: 'media-choreography',
+      targets: [{ selector: g.selector, nid: g.nid, rect: g.rect }],
+      section: comp.section,
+      startScroll: linked.map((e) => e.startScroll).filter((x) => x != null).sort((a, b) => a - b)[0],
+      animation: {
+        ...lay,
+        motion: linked.slice(0, 12).map((e) => ({ id: e.effect_type, trigger: e.trigger, targets: (e.targets || []).slice(0, 3).map((t) => t.selector), duration: e.animation && e.animation.duration, ease: e.animation && e.animation.ease, values: e.animation && (e.animation.values || e.animation.to), scroll: e.animation && e.animation.scroll })),
+        stagger: starts.length > 2 ? Math.round(median(starts.slice(1).map((t, i) => t - starts[i])) ) / 1000 : undefined,
+      },
+      _linked: linked,
+      t: starts[0] || 0,
+    });
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ press / toggle interactions (scan steps)
@@ -762,6 +984,34 @@ function interactionEffects(cap, ctx) {
       animation: { changes: p.diff.slice(0, 20), holdMs: p.holdMs },
       shots: p.shots || [],
       t: p.t || 0,
+    });
+  }
+  for (const c of cap.clicks || []) {
+    out.push({
+      _kind: 'interaction',
+      source: 'measured:click',
+      confidence: 0.75,
+      technique: 'css-transition',
+      trigger: 'click',
+      effect_type: 'click-feedback',
+      targets: [c.target],
+      animation: { during: (c.diff || []).slice(0, 20), persistent: (c.stays || []).slice(0, 20) },
+      shots: [],
+      t: c.t || 0,
+    });
+  }
+  for (const d of cap.drags || []) {
+    out.push({
+      _kind: 'interaction',
+      source: 'measured:drag',
+      confidence: 0.75,
+      technique: 'js-inline-style',
+      trigger: 'drag',
+      effect_type: 'gallery-drag',
+      targets: [d.target],
+      animation: { dragPx: d.dragPx, followPx: d.atReleasePx, travelPx: d.movedPx, inertia: d.inertia, settleMs: d.settleMs, grabCursor: d.grab || false, followRatio: d.dragPx ? Math.round((d.atReleasePx / d.dragPx) * 100) / 100 : null },
+      shots: d.shots || [],
+      t: d.t || 0,
     });
   }
   for (const g of cap.toggles || []) {
@@ -901,7 +1151,7 @@ function analyze3DMotion(cap, ctx) {
       const ts = tk.t.slice(sg.start, sg.end + 1), vs = tk[main.ch].slice(sg.start, sg.end + 1);
       const nrm = normalize(ts, vs);
       const phase = phaseKind(phaseAt(ctx.marks, ts[0]));
-      e.trigger = phase === 'hover' ? 'hover' : phase === 'scroll' ? 'scroll-enter' : phase === 'manual' ? ctx.manualTrigger(ts[0]) : phase === 'press' ? 'press' : phase === 'toggle' ? 'click' : 'load';
+      e.trigger = phase === 'hover' ? 'hover' : phase === 'scroll' ? 'scroll-enter' : phase === 'manual' ? ctx.manualTrigger(ts[0]) : phase === 'press' ? 'press' : phase === 'toggle' ? 'click' : phase === 'drag' ? 'drag' : 'load';
       e.effect_type = isCam ? 'camera-scroll-path' : '3d-object-motion';
       if (isCam && e.trigger !== 'scroll-enter') e.effect_type = '3d-object-motion';
       e.animation = {
@@ -1356,7 +1606,9 @@ export function analyze(cap) {
     hoverKeys.add(t.selector);
   }
   const waapiKept = waapiFx.filter((w) => {
-    if (w.trigger !== 'hover' || w.technique !== 'css-transition') return true;
+    if (w.technique !== 'css-transition') return true;
+    // hover-out transitions happen when the pointer leaves (next phase): same element as a hover effect → same effect
+    if (w.trigger !== 'hover' && !['load', 'scroll-enter'].includes(w.trigger)) return true;
     const h = hoverFx.find((x) => x.targets.some((t) => w.targets.some((wt) => (wt.nid && wt.nid === t.nid) || wt.selector === t.selector || (wt.selector || '').startsWith(t.selector + ' '))));
     if (!h) return true;
     h.animation.transitions = h.animation.transitions || [];
@@ -1414,6 +1666,23 @@ export function analyze(cap) {
       return false;
     });
   }
+  // motion recorded right after a feedback click / during a drag belongs to it
+  for (const [src, trig, win] of [['measured:click', 'click', 1500], ['measured:drag', 'drag', 3500]]) {
+    const owners = all.filter((e) => e.source === src);
+    if (!owners.length) continue;
+    all = all.filter((e) => {
+      if (e.source === src || e._kind === 'three') return true;
+      // the dragged track itself (its back-and-forth can look like a loop) belongs to the drag
+      const sameTarget = src === 'measured:drag' && owners.find((g) => (e.targets || []).some((t) => g.targets.some((gt) => (t.nid && t.nid === gt.nid) || (t.selector || '').startsWith(gt.selector))));
+      if (e.trigger !== trig && !sameTarget) return true;
+      const o = sameTarget || owners.filter((g) => e.t >= g.t - 50 && e.t <= g.t + win).sort((a, b) => b.t - a.t)[0];
+      if (!o) return true;
+      const a = e.animation || {};
+      o.animation.motion = o.animation.motion || [];
+      o.animation.motion.push({ targets: (e.targets || []).slice(0, 4).map((t) => t.selector), properties: a.properties || a.name || a.channels, duration: a.duration, delay: a.delay, ease: a.ease, ease_bezier: a.ease_bezier, values: a.values });
+      return false;
+    });
+  }
   // press motion recorded on the pressed element / inside it
   const presses = all.filter((e) => e.source === 'measured:press');
   if (presses.length) {
@@ -1430,7 +1699,37 @@ export function analyze(cap) {
   // late reveals): verify it by scrolling there, not by waiting at the top
   const vh0 = (bp1440.viewport && bp1440.viewport.h) || 900;
   for (const e of all) if (e.trigger === 'load' && e.startScroll != null && e.startScroll > vh0 * 0.75 && e._kind !== 'three') e.trigger = 'scroll-enter';
+  const comps = mediaCompositions(cap, ctx, all);
+  if (comps.effects.length) {
+    const absorbed = new Set(comps.effects.flatMap((c) => c._linked));
+    all = all.filter((e) => !absorbed.has(e)).concat(comps.effects.map(({ _linked, ...c }) => c));
+  }
   all = mergeSimilar(all);
+  const scene = analyzeScene(cap, ctx, vh0);
+  const sceneFx = sceneEffects(scene, ctx, vh0);
+  if (sceneFx.length) {
+    // text / border colours that follow the décor (inherited colour transitions) belong to the décor change
+    const COLOR = /^(color|backgroundColor|background-color|borderColor|border-color|fill|stroke|borderTopColor|outlineColor)$/;
+    const colorOnly = (e) => {
+      const a = e.animation || {};
+      const keys = a.values ? Object.keys(a.values) : a.keyframes ? [...new Set(a.keyframes.flatMap((k) => Object.keys(k).filter((x) => !['offset', 'easing', 'composite'].includes(x))))] : a.name ? [a.name] : [];
+      return keys.length && keys.every((k) => COLOR.test(k));
+    };
+    all = all.filter((e) => {
+      if (e.trigger !== 'scroll-enter' && e.trigger !== 'load' && e.trigger !== 'scroll-scrub') return true;
+      if (!colorOnly(e)) return true;
+      // inherited colour jitter (a few RGB units) is noise, not motion
+      const v = (e.animation || {}).values;
+      if (v && Object.values(v).every((x) => x && typeof x.from === 'string' && rgbDist(cssHex(x.from), cssHex(x.to)) < 12)) return false;
+      const y = e.startScroll != null ? e.startScroll : null;
+      const owner = sceneFx.find((f) => y != null && y >= f.animation.startScroll - vh0 && y <= f.animation.endScroll + vh0) || (y == null ? sceneFx[0] : null);
+      if (!owner) return true;
+      owner.animation.follows = owner.animation.follows || [];
+      if (owner.animation.follows.length < 12) owner.animation.follows.push({ targets: (e.targets || []).slice(0, 3).map((t) => t.selector), values: e.animation.values || e.animation.keyframes || e.animation.name, duration: e.animation.duration, ease: e.animation.ease });
+      return false;
+    });
+  }
+  all.push(...sceneFx);
   // Drop trivial measured noise: single-target, sub-50ms, tiny changes
   all = all.filter((e) => !(e._kind === 'recorder' && e.trigger !== 'scroll-scrub' && e.trigger !== 'time-loop' && e.trigger !== 'mouse-move' && e.animation && e.animation.duration != null && e.animation.duration < 0.05));
   // order: by section order then time
@@ -1469,6 +1768,8 @@ export function analyze(cap) {
     url: cap.meta && cap.meta.url,
     sections,
     effects: all.map(({ _m, _kind, _closeT, t, ...rest }) => ({ ...rest, kind: _kind, t })),
+    scene,
+    compositions: comps.compositions,
     scroll,
     typography: roles,
     tokens,
@@ -1507,4 +1808,4 @@ function risksOf(a, cap) {
   return r;
 }
 
-export { sectionFor, pearson, measureTrack, analyze3DMotion };
+export { sectionFor, pearson, measureTrack, analyze3DMotion, analyzeScene };

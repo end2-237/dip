@@ -2,11 +2,12 @@
 import { zip, base64ToBytes } from './zip.js';
 import { EFFECT_TYPES } from './taxonomy.js';
 import { COMMANDS } from './commands.js';
+import { SKILLS } from './skills.js';
 import { geometryToGlb } from './glb.js';
 import { sectionFor } from './analyzer.js';
 
 export const SCHEMA_VERSION = 1;
-export const DIP_VERSION = '0.1.0';
+export const DIP_VERSION = '0.2.0';
 
 const J = (o) => JSON.stringify(o, null, 2);
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -226,13 +227,53 @@ function recipe(e, analysis) {
     if (a.styleChanges && a.styleChanges.length) for (const c of a.styleChanges.slice(0, 10)) lines.push(`   - \`${c.sel}\` **${c.prop}**: \`${c.before}\` → \`${c.after}\``);
     for (const m of (a.motion || []).slice(0, 8)) lines.push(`   Motion while opening: ${(m.targets || []).map((t) => '\`' + t + '\`').join(', ')} — ${Array.isArray(m.properties) ? m.properties.join(', ') : m.properties || ''} ${m.duration != null ? m.duration + 's' : ''} ${m.ease ? '\`' + m.ease + '\`' : ''}${m.delay ? ' delay ' + m.delay + 's' : ''}`);
     lines.push(`   Keep \`aria-expanded\` / \`aria-selected\` in sync, close on Escape, trap focus in overlays.`);
+  } else if (e.source === 'measured:click') {
+    lines.push(`${n()}. Clicking \`${(e.targets[0] || {}).selector}\` gives visual feedback (no navigation). Just after the click (≈150 ms):`);
+    for (const c of (a.during || []).slice(0, 10)) lines.push(`   - \`${c.sel}\` **${c.prop}**: \`${c.before}\` → \`${c.after}\``);
+    if ((a.persistent || []).length) {
+      lines.push(`   State kept after the click (≈1 s):`);
+      for (const c of a.persistent.slice(0, 8)) lines.push(`   - \`${c.sel}\` **${c.prop}**: \`${c.before}\` → \`${c.after}\``);
+    }
+    for (const m of (a.motion || []).slice(0, 6)) lines.push(`   Motion: ${(m.targets || []).map((t) => '\`' + t + '\`').join(', ')} ${m.duration != null ? m.duration + 's' : ''} ${m.ease ? '\`' + m.ease + '\`' : ''} ${m.values ? fmt(m.values) : ''}`);
+  } else if (e.source === 'measured:drag') {
+    lines.push(`${n()}. \`${(e.targets[0] || {}).selector}\` can be dragged with the pointer${a.grabCursor ? ' (cursor: grab / grabbing)' : ''}. Measured with a ${Math.abs(a.dragPx)}px flick in ~200 ms: the content followed **${a.followPx}px** during the drag (ratio ${a.followRatio}), and travelled **${a.travelPx}px** in total after release${a.inertia ? ` (inertia ×${a.inertia})` : ''}; it settled in ≈ ${a.settleMs}ms.`);
+    lines.push(`   Implementation: pointer events + velocity tracking and an eased glide (GSAP Draggable + InertiaPlugin, Embla or Swiper with \`freeMode: { momentum: true }\`); snap to slides only if the reference does. Before / after: ${(e.shots || []).map((x) => '\`' + x + '\`').join(', ')}.`);
+    for (const m of (a.motion || []).slice(0, 6)) lines.push(`   Motion during the drag: ${(m.targets || []).map((t) => '\`' + t + '\`').join(', ')} ${Array.isArray(m.properties) ? m.properties.join(', ') : m.properties || ''} ${m.duration != null ? m.duration + 's' : ''}`);
+  } else if (e.source === 'measured:scene') {
+    lines.push(`${n()}. Décor change: between **${a.startScroll}px** and **${a.endScroll}px** of scroll the page background goes from \`${a.from}\` (luminance ${a.lumFrom}) to \`${a.to}\` (luminance ${a.lumTo}) — ${a.mode === 'scrub' ? 'progressively, tied to the scroll' : 'as a timed transition once the point is passed'}; measured on the ${a.via}${a.theme ? ` (theme \`${a.theme.from || 'none'}\` → \`${a.theme.to || 'none'}\`)` : ''}.`);
+    lines.push('');
+    lines.push('```js');
+    if (a.mode === 'scrub') lines.push(`gsap.to('body', { backgroundColor: '${a.to}', ease: 'none', scrollTrigger: { start: ${a.startScroll}, end: ${a.endScroll}, scrub: true } }); // also swap text colours (CSS variables) at the same time`);
+    else lines.push(`ScrollTrigger.create({ start: ${a.startScroll}, onEnter: () => document.body.classList.add('is-scene-${String(a.to).slice(1)}'), onLeaveBack: () => document.body.classList.remove('is-scene-${String(a.to).slice(1)}') }); // CSS: body { transition: background-color .8s, color .8s } [duration estimated]`);
+    lines.push('```');
+    lines.push(`   Drive every colour from CSS variables (--bg, --fg, --accent) so text, borders and the 3D scene switch together. See \`motion/scene.json\` for the whole décor timeline.`);
+  } else if (e.source === 'measured:composition' || e.source === 'measured:layout') {
+    const L = a;
+    const shape = L.layout === 'spiral' ? `a **spiral** of ${L.count} items: radius ${L.radius[0]} → ${L.radius[1]}px, ≈ ${L.angleStep}° between items (${L.turns} turn, ${L.direction})` : L.layout === 'circle' ? `a **circle / orbit** of ${L.count} items, radius ${L.radius}px, ≈ ${L.angleStep}° apart` : L.layout === 'fan' ? `a **fan** of ${L.count} items rotated by ≈ ${L.rotationStep}° each around a shared pivot` : L.layout === 'stack' ? `a **stack / deck** of ${L.count} items almost on top of each other (offsets ${fmt(L.offsets)})` : `a **${L.layout}** of ${L.count} items`;
+    lines.push(`${n()}. Composition: \`${(e.targets[0] || {}).selector}\` holds ${shape}; item size ≈ ${L.itemSize}px${L.rotations ? `; item rotations ${fmt(L.rotations)}°` : ''}. Build it from a formula (index → angle / radius / rotation), not from hard-coded positions, so it stays responsive.`);
+    lines.push('');
+    lines.push('```js');
+    if (L.layout === 'spiral') lines.push(`items.forEach((el, i) => { const a = i * ${L.angleStep} * Math.PI / 180, r = ${L.radius[0]} + i * ${Math.round((L.radius[1] - L.radius[0]) / Math.max(1, L.count - 1))}; gsap.set(el, { x: Math.cos(a) * r, y: Math.sin(a) * r, rotation: i * ${L.angleStep} }); });`);
+    else if (L.layout === 'circle') lines.push(`items.forEach((el, i) => { const a = i * ${L.angleStep} * Math.PI / 180; gsap.set(el, { x: Math.cos(a) * ${L.radius}, y: Math.sin(a) * ${L.radius} }); });`);
+    else if (L.layout === 'fan') lines.push(`items.forEach((el, i) => gsap.set(el, { rotation: (i - (items.length - 1) / 2) * ${L.rotationStep}, transformOrigin: '50% 120%' }));`);
+    else lines.push(`// ${L.layout}: place the items as in reference/1440 (see motion/effects card), then animate the group`);
+    lines.push('```');
+    if ((a.motion || []).length) {
+      lines.push(`   Motion of the composition (${e.trigger}):`);
+      for (const m of a.motion.slice(0, 8)) lines.push(`   - ${(m.targets || []).map((t) => '\`' + t + '\`').join(', ')}: ${m.id}, ${m.trigger}${m.duration != null ? ', ' + m.duration + 's' : ''}${m.ease ? ', \`' + m.ease + '\`' : ''}${m.scroll ? `, scroll ${m.scroll.startPx}→${m.scroll.endPx}px` : ''} ${m.values ? fmt(m.values) : ''}`);
+      if (a.stagger) lines.push(`   Items start ≈ ${a.stagger}s apart.`);
+    } else lines.push('   Static composition (no motion measured): the layout itself is the effect.');
   } else if (e.source === 'measured:hover') {
     lines.push(`${n()}. On hover, apply these computed-style changes (before → after):`);
     lines.push('');
     for (const c of (a.changes || []).slice(0, 12)) lines.push(`   - \`${c.sel}\` **${c.prop}**: \`${c.before}\` → \`${c.after}\``);
     if (a.transition) lines.push(`   Transition declared on the element: \`${a.transition}\`.`);
+    if (a.sweep) lines.push(`   The pointer was also dragged slowly across it (left → right): motion recorded during that pass is listed in the related hover effects (letter-by-letter / scramble / skew reactions).`);
+    if (a.cssRule) lines.push(`   Declared in a CSS \`:hover\` rule (not a link): keep it pure CSS.`);
     if (a.magnetic) lines.push(`   Magnetic: the element moves toward the pointer by ≈ ${a.magnetic.maxShiftPx}px when the pointer is ${a.magnetic.offsetPx}px from its centre (strength ≈ ${a.magnetic.strength}).`);
   }
+  if (e.effect_type === 'zoom-through') lines.push(`${n()}. Zoom-through: pin the section, scale the target until it covers the viewport (transform-origin on the point you "enter"), then reveal the next scene inside it (opacity / clip-path swap at the end of the scrub). Keep text crisp: scale a wrapper, not rasterised text.`);
+  if (e.effect_type === 'media-expand') lines.push(`${n()}. Media expand: pin the section and animate the frame from its card size to full viewport (clip-path inset or width/height + border-radius → 0) while the image inside counter-scales slightly.`);
   if (e.effect_type === 'image-parallax') lines.push(`${n()}. Keep the media inside an \`overflow: hidden\` frame, oversized enough to never reveal an edge.`);
   if (e.effect_type === 'marquee') lines.push(`${n()}. Duplicate the track content and wrap with a modulo so it never jumps.`);
   lines.push(`${n()}. Respect \`prefers-reduced-motion: reduce\`: ${analysisReduced(analysis)}`);
@@ -765,6 +806,7 @@ export async function buildPackFiles(cap, analysis, opts) {
   add('AGENT_RULES.md', agentRules());
   // Claude Code commands (run on the user's Claude subscription): /dip-dna, /dip-transform, /dip-create
   for (const [name, body] of Object.entries(COMMANDS)) add('.claude/commands/' + name, body);
+  for (const [name, body] of Object.entries(SKILLS)) add('.claude/skills/' + name, body);
   add('SPEC.md', specMd(cap, analysis, effects, stack, mode, refs));
   add('BUILD_PLAN.md', buildPlanMd(analysis, effects, stack));
 
@@ -781,11 +823,13 @@ export async function buildPackFiles(cap, analysis, opts) {
 
   // motion
   add('motion/scroll-system.json', J(analysis.scroll));
+  if ((analysis.compositions || []).length) add('structure/compositions.json', J({ note: 'Multi-image compositions (layout read from the page at 1440; animated = motion measured on the group).', compositions: analysis.compositions }));
+  if (analysis.scene) add('motion/scene.json', J({ note: 'Décor along the scroll at 1440: dominant background per scroll position, section colour rhythm, and animated décor changes (shifts).', ...analysis.scene }));
   const intro = effects.filter((e) => e.trigger === 'load');
   add('motion/timeline-intro.json', J({ stabilizedAfterMs: analysis.intro && analysis.intro.ms, preloader: analysis.intro && analysis.intro.preloader, effects: intro.map((e) => ({ id: e.id, t: e.t, duration: e.animation && e.animation.duration, delay: e.animation && e.animation.delay, targets: (e.targets || []).map((t) => t.selector) })).sort((a, b) => a.t - b.t) }));
   for (const e of effects) {
-    const { curve, shots: _s, llm, t, ...card } = e;
-    const json = { ...card, t_ms: t, reduced_motion: analysis.reducedMotion ? 'handled by the site' : 'not handled by the site: the agent must add a fallback', verify: { anchor: `[data-dip-effect~="${e.id}"]`, metric: e.trigger === 'scroll-scrub' ? 'scroll-curve-rms' : e.trigger === 'hover' ? 'hover-style' : 'motion-rms', threshold: e.confidence < 0.6 ? 0.12 : 0.05 } };
+    const { curve, shots, llm, t, ...card } = e;
+    const json = { ...card, preview: (shots || []).slice(-1)[0] || (e.reference && e.reference.frames && e.reference.frames[Math.floor(e.reference.frames.length / 2)]) || null, t_ms: t, reduced_motion: analysis.reducedMotion ? 'handled by the site' : 'not handled by the site: the agent must add a fallback', verify: { anchor: `[data-dip-effect~="${e.id}"]`, metric: e.trigger === 'scroll-scrub' ? 'scroll-curve-rms' : e.trigger === 'hover' ? 'hover-style' : 'motion-rms', threshold: e.confidence < 0.6 ? 0.12 : 0.05 } };
     if (llm) json.description = llm.summary;
     add(`motion/effects/${e.id}.json`, J(json));
     add(`motion/effects/${e.id}.md`, effectMd(e, analysis));
@@ -847,7 +891,7 @@ export async function buildPackFiles(cap, analysis, opts) {
       top: s.top,
     })),
     effects: effects
-      .filter((e) => e.curve || e.trigger === 'hover' || e.trigger === 'time-loop' || e.source === 'measured:press' || e.source === 'measured:toggle' || e.source === 'read:three')
+      .filter((e) => e.curve || e.trigger === 'hover' || e.trigger === 'time-loop' || ['measured:press', 'measured:toggle', 'measured:click', 'measured:drag', 'measured:scene', 'measured:composition', 'measured:layout', 'read:three'].includes(e.source))
       .map((e) => ({
         id: e.id,
         section: e.section,
@@ -856,10 +900,14 @@ export async function buildPackFiles(cap, analysis, opts) {
         effectType: e.effect_type,
         startMs: e.t != null ? Math.round(e.t) : null,
         startScroll: e.startScroll != null ? e.startScroll : null,
-        metric: e.source === 'read:three' ? (e.trigger === 'scroll-scrub' ? '3d-scroll-path' : e.trigger === 'time-loop' ? '3d-loop' : e.trigger === 'mouse-move' ? '3d-mouse' : '3d-motion') : e.source === 'measured:press' ? 'press-style' : e.source === 'measured:toggle' ? 'toggle' : e.trigger === 'scroll-scrub' ? 'scroll-curve-rms' : e.trigger === 'hover' ? 'hover-style' : e.trigger === 'time-loop' ? 'loop-speed' : 'motion-rms',
+        metric: e.source === 'read:three' ? (e.trigger === 'scroll-scrub' ? '3d-scroll-path' : e.trigger === 'time-loop' ? '3d-loop' : e.trigger === 'mouse-move' ? '3d-mouse' : '3d-motion') : e.source === 'measured:press' ? 'press-style' : e.source === 'measured:toggle' ? 'toggle' : e.source === 'measured:click' ? 'click-style' : e.source === 'measured:drag' ? 'drag' : e.source === 'measured:scene' ? 'scene-colors' : e.source === 'measured:composition' || e.source === 'measured:layout' ? 'composition' : e.trigger === 'scroll-scrub' ? 'scroll-curve-rms' : e.trigger === 'hover' ? 'hover-style' : e.trigger === 'time-loop' ? 'loop-speed' : 'motion-rms',
         three: e.source === 'read:three' ? { object: e.three.object, kind: e.three.kind, channels: e.three.channels, mainChannel: e.animation.mainChannel, loop: e.animation.loop, mouse: e.animation.mouse } : undefined,
         pressChanges: e.source === 'measured:press' ? (e.animation.changes || []).slice(0, 12) : undefined,
         toggle: e.source === 'measured:toggle' ? { kind: e.animation.kind, label: e.animation.label } : undefined,
+        clickChanges: e.source === 'measured:click' ? (e.animation.during || []).concat(e.animation.persistent || []).slice(0, 12) : undefined,
+        drag: e.source === 'measured:drag' ? { dragPx: e.animation.dragPx, followRatio: e.animation.followRatio, travelPx: e.animation.travelPx } : undefined,
+        composition: e.effect_type === 'media-choreography' ? { layout: e.animation.layout, count: e.animation.count } : undefined,
+        scene: e.source === 'measured:scene' ? { from: e.animation.from, to: e.animation.to, startScroll: e.animation.startScroll, endScroll: e.animation.endScroll, mode: e.animation.mode } : undefined,
         threshold: e.confidence < 0.6 ? 0.12 : 0.05,
         duration: e.animation && typeof e.animation.duration === 'number' ? e.animation.duration : null,
         delay: e.animation && e.animation.delay ? e.animation.delay : 0,

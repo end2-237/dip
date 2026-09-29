@@ -87,6 +87,11 @@ export class CdpDriver {
     await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(x), y: Math.round(y), button: 'left', buttons: 1, clickCount: 1 });
   }
 
+  // pointer move with the left button held (drag)
+  async mouseDrag(x, y) {
+    await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x), y: Math.round(y), button: 'left', buttons: 1 });
+  }
+
   async mouseUp(x, y) {
     await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(x), y: Math.round(y), button: 'left', buttons: 0, clickCount: 1 });
   }

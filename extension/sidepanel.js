@@ -1,7 +1,6 @@
 // DIP side panel: UI + scan orchestration (the panel stays alive while open, unlike the MV3 service worker).
-import { runScan } from './lib/scan.js';
-import { CdpDriver } from './lib/cdp-driver.js';
-import { StandardDriver, bytesToB64 } from './lib/std-driver.js';
+import { bytesToB64 } from './lib/std-driver.js';
+import { dissectTab, shareImage } from './lib/runner.js';
 import { buildPackZip, buildPackFiles, packName } from './lib/pack.js';
 import { getRoot, access, savePack } from './lib/workspace.js';
 import { synthesize } from './lib/llm.js';
@@ -83,9 +82,6 @@ function onProgress(p) {
 }
 
 // ------------------------------------------------------------------ scan
-async function probeSource() {
-  return (await fetch(chrome.runtime.getURL('probes/probes.js'))).text();
-}
 
 async function start(manual) {
   if (busy) return;
@@ -115,30 +111,9 @@ async function start(manual) {
   $('#progress-title').textContent = manual ? t('manualRunning') : t('running');
   $('#btn-stop').hidden = !manual;
 
-  let driver = null;
-  let detach = async () => {};
   try {
-    if (deep) {
-      const target = { tabId: tab.id };
-      await chrome.debugger.attach(target, '1.3');
-      detach = async () => chrome.debugger.detach(target).catch(() => {});
-      driver = new CdpDriver((method, params) => chrome.debugger.sendCommand(target, method, params || {}));
-      await driver.init(await probeSource());
-    } else {
-      await chrome.scripting.unregisterContentScripts({ ids: ['dip-probes'] }).catch(() => {});
-      await chrome.scripting.registerContentScripts([{ id: 'dip-probes', matches: [origin], js: ['probes/probes.js'], runAt: 'document_start', world: 'MAIN', allFrames: false, persistAcrossSessions: false }]);
-      detach = async () => chrome.scripting.unregisterContentScripts({ ids: ['dip-probes'] }).catch(() => {});
-      driver = new StandardDriver(tab.id, tab.windowId);
-    }
     const manualCtl = manual ? { waitForStop: new Promise((r) => (stopResolver = r)) } : null;
-    const { cap, analysis } = await runScan(
-      driver,
-      { url: tab.url, title: tab.title, captureMode: deep ? 'deep' : 'standard', runner: 'extension' },
-      { breakpoints: settings.breakpoints.length ? settings.breakpoints : [1440], consent: settings.consent, maxHovers: settings.maxHovers, exportMode: settings.exportMode, manual: manualCtl },
-      onProgress
-    );
-    if (driver.dispose) await driver.dispose();
-    await detach();
+    const { cap, analysis } = await dissectTab(tab, { deep, breakpoints: settings.breakpoints, consent: settings.consent, maxHovers: settings.maxHovers, exportMode: settings.exportMode, manual: manualCtl }, onProgress);
     if (!analysis) throw new Error((cap.log.find((l) => l.level === 'error') || {}).error || 'no analysis');
     if (settings.useLLM && settings.apiKey) {
       $('#progress-step').textContent = t('llmRunning');
@@ -157,12 +132,6 @@ async function start(manual) {
   } catch (e) {
     console.error(e);
     message(t('failed') + ' : ' + (e.message || e), 'error');
-    try {
-      if (driver && driver.dispose) await driver.dispose();
-    } catch (e2) {
-      /* ignore */
-    }
-    await detach();
   } finally {
     stopResolver = null;
     setBusy(false);
@@ -263,18 +232,6 @@ function renameEffect(e, input) {
 }
 
 // ------------------------------------------------------------------ export
-async function shareImage(bytes) {
-  // share mode: half resolution + watermark (spec §10.5)
-  const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
-  const w = Math.max(1, Math.round(bmp.width / 2)), h = Math.max(1, Math.round(bmp.height / 2));
-  const c = new OffscreenCanvas(w, h);
-  const g = c.getContext('2d');
-  g.drawImage(bmp, 0, 0, w, h);
-  g.font = `${Math.max(10, Math.round(w / 40))}px system-ui`;
-  g.fillStyle = 'rgba(255,255,255,.55)';
-  g.fillText('DIP · share · reference only', 12, h - 12);
-  return new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer());
-}
 
 async function exportPack(selectedOnly) {
   if (!current) return;

@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CdpDriver } from '../extension/lib/cdp-driver.js';
-import { measureTrack, analyze3DMotion } from '../extension/lib/analyzer.js';
+import { measureTrack, analyze3DMotion, classifyLayout } from '../extension/lib/analyzer.js';
 import { launchBrowser } from './lib/browser.js';
 import { curveRms, compareInPage, hexToLab, deltaE2000 } from './lib/verify-core.js';
 
@@ -179,7 +179,7 @@ async function main() {
     // motion (main breakpoint)
     const main = mainBp;
     for (const e of effects) {
-      if (!e.curve && !['hover-style', 'loop-speed', 'press-style', 'toggle'].includes(e.metric) && !String(e.metric).startsWith('3d-')) continue;
+      if (!e.curve && !['hover-style', 'loop-speed', 'press-style', 'toggle', 'click-style', 'drag', 'scene-colors', 'composition'].includes(e.metric) && !String(e.metric).startsWith('3d-')) continue;
       await load(main);
       const out = (res.effects[e.id] = { section: e.section, trigger: e.trigger, notes: [] });
       if (String(e.metric).startsWith('3d-')) {
@@ -190,6 +190,16 @@ async function main() {
           out.notes.push('3D verification failed: ' + err.message);
         }
         if (out.score < 0.9) issue(e.id, out.notes[0] || `3D ${out.score}`, ((1 - out.score) * cfg.weights.motion) / Math.max(1, effects.length));
+        continue;
+      }
+      if (e.metric === 'scene-colors') {
+        try {
+          Object.assign(out, await verifyScene(driver, e));
+        } catch (err) {
+          out.score = 0;
+          out.notes.push('décor verification failed: ' + err.message);
+        }
+        if (out.score < 0.9) issue(e.id, out.notes[0] || `décor ${out.score}`, ((1 - out.score) * cfg.weights.motion) / Math.max(1, effects.length));
         continue;
       }
       const present = await driver.call('rectOf', e.anchor).catch(() => null);
@@ -203,6 +213,9 @@ async function main() {
         if (e.metric === 'hover-style') Object.assign(out, await verifyHover(driver, e));
         else if (e.metric === 'press-style') Object.assign(out, await verifyPress(driver, e));
         else if (e.metric === 'toggle') Object.assign(out, await verifyToggle(driver, e));
+        else if (e.metric === 'click-style') Object.assign(out, await verifyClick(driver, e));
+        else if (e.metric === 'drag') Object.assign(out, await verifyDrag(driver, e));
+        else if (e.metric === 'composition') Object.assign(out, await verifyComposition(driver, e));
         else if (e.metric === 'loop-speed') Object.assign(out, await verifyLoop(driver, e));
         else if (e.trigger === 'scroll-scrub') Object.assign(out, await verifyScrub(driver, e, packDir));
         else Object.assign(out, await verifyTimed(driver, page, e, packDir));
@@ -474,6 +487,118 @@ async function verifyPress(driver, e) {
   return { score: r2(hit / want.size), notes };
 }
 
+async function verifyClick(driver, e) {
+  const ping = await driver.call('ping');
+  const r0 = await driver.call('rectOf', e.anchor);
+  await driver.call('scrollToY', Math.max(0, r0.abs.y - ping.vh / 2), 200);
+  await driver.call('guardNav', true);
+  const r = await driver.call('rectOf', e.anchor);
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  await driver.mouseMove(cx, cy);
+  await sleep(450);
+  const before = await driver.call('styleSnapshot', e.anchor);
+  await driver.mouseClick(cx, cy);
+  await sleep(160);
+  const during = await driver.call('styleSnapshot', e.anchor);
+  await sleep(900);
+  const after = await driver.call('styleSnapshot', e.anchor);
+  await driver.call('guardNav', false);
+  const changed = new Set();
+  for (const snap of [during, after])
+    for (const b of before.styles) {
+      const a = snap.styles.find((x) => x.sel === b.sel);
+      if (a) for (const k of Object.keys(b)) if (k !== 'sel' && k !== 'nid' && a[k] !== b[k]) changed.add(k);
+    }
+  const want = [...new Set((e.clickChanges || []).map((c) => c.prop))];
+  if (!want.length) return { score: 1, notes: [] };
+  const missing = want.filter((p) => !changed.has(p));
+  return { score: r2((want.length - missing.length) / want.length), notes: missing.map((p) => `click: ${p} does not change`) };
+}
+async function verifyDrag(driver, e) {
+  const ping = await driver.call('ping');
+  const r0 = await driver.call('rectOf', e.anchor);
+  await driver.call('scrollToY', Math.max(0, r0.abs.y - ping.vh / 2 + r0.h / 2), 250);
+  await driver.call('guardNav', true);
+  const r = await driver.call('rectOf', e.anchor);
+  const cy = r.y + r.h / 2;
+  const x0 = Math.min(ping.vw - 40, r.x + r.w * 0.7), dx = (e.drag && e.drag.dragPx) || -300;
+  const s0 = await driver.call('dragState', e.anchor);
+  await driver.mouseMove(x0, cy);
+  await driver.mouseDown(x0, cy);
+  for (let k = 1; k <= 10; k++) {
+    await driver.mouseDrag(x0 + (dx * k) / 10, cy);
+    await sleep(20);
+  }
+  const sR = await driver.call('dragState', e.anchor);
+  await driver.mouseUp(x0 + dx, cy);
+  await driver.call('waitStable', 250, 3000).catch(() => {});
+  const s1 = await driver.call('dragState', e.anchor);
+  await driver.call('guardNav', false);
+  const follow = sR.x - s0.x + (s0.scrollLeft - sR.scrollLeft);
+  const travel = s1.x - s0.x + (s0.scrollLeft - s1.scrollLeft);
+  const want = e.drag || {};
+  const notes = [];
+  if (Math.abs(travel) < 8 && Math.abs(follow) < 8) return { score: 0.2, notes: ['dragging does not move the content: make it draggable (pointer events + inertia)'] };
+  const fr = dx ? follow / dx : 0;
+  let score = 1;
+  if (want.followRatio != null && Math.abs(fr - want.followRatio) > 0.25) {
+    score -= 0.3;
+    notes.push(`drag follow ratio ${r2(fr)}, expected ${want.followRatio}`);
+  }
+  if (want.travelPx && Math.abs(travel - want.travelPx) > Math.abs(want.travelPx) * 0.35) {
+    score -= 0.3;
+    notes.push(`travel after release ${Math.round(travel)}px, expected ≈ ${want.travelPx}px (inertia)`);
+  }
+  return { score: r2(Math.max(0.2, score)), notes };
+}
+async function verifyComposition(driver, e) {
+  const want = e.composition || {};
+  const groups = (await driver.call('mediaGroups', 20)) || [];
+  const inAnchor = await driver.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(e.anchor)}); return el ? [...el.querySelectorAll('*')].length : 0; })()`);
+  // the group whose container is the anchor or inside it
+  let g = null;
+  for (const x of groups) {
+    const ok = await driver.evaluate(`(() => { const a = document.querySelector(${JSON.stringify(e.anchor)}); const c = document.querySelector(${JSON.stringify(x.selector)}); return !!(a && c && (a === c || a.contains(c))); })()`);
+    if (ok) {
+      g = x;
+      break;
+    }
+  }
+  if (!g) return { score: 0.2, notes: [`no group of ≥ 4 images found in ${e.anchor} (${inAnchor} elements inside): build the ${want.layout} of ${want.count} items`] };
+  const lay = classifyLayout(g.children) || {};
+  const notes = [];
+  let score = 1;
+  if (lay.layout !== want.layout) {
+    score -= 0.5;
+    notes.push(`composition is laid out as "${lay.layout}", expected "${want.layout}"`);
+  }
+  if (want.count && Math.abs(g.children.length - want.count) > 1) {
+    score -= 0.2;
+    notes.push(`${g.children.length} items, expected ${want.count}`);
+  }
+  return { score: r2(Math.max(0.2, score)), notes };
+}
+async function verifyScene(driver, e) {
+  const sc = e.scene || {};
+  const ping = await driver.call('ping');
+  const sampleAt = async (y) => {
+    const cur = await driver.call('scrollPos');
+    const step = y > cur ? 120 : -120;
+    for (let p = cur; step > 0 ? p < y : p > y; p += step) await driver.call('scrollToY', p, 30);
+    await driver.call('scrollToY', y, 60);
+    await sleep(900);
+    return driver.call('sceneSample');
+  };
+  const a = await sampleAt(Math.max(0, (sc.startScroll || 0) - 60));
+  const b = await sampleAt(Math.min((await driver.call('docHeight')) - ping.vh, (sc.endScroll || 0) + 150));
+  const dE = (x, y) => (x && y ? deltaE2000(hexToLab(x), hexToLab(y)) : 100);
+  const s1 = dE(a.bg, sc.from), s2 = dE(b.bg, sc.to);
+  const part = (d) => (d < 6 ? 1 : d < 15 ? 0.7 : d < 30 ? 0.4 : 0.1);
+  const notes = [];
+  if (s1 >= 6) notes.push(`décor before ${sc.startScroll}px: background ${a.bg}, expected ${sc.from} (ΔE ${r2(s1)})`);
+  if (s2 >= 6) notes.push(`décor after ${sc.endScroll}px: background ${b.bg}, expected ${sc.to} (ΔE ${r2(s2)}) — the colour change is missing or too late/early`);
+  return { score: r2((part(s1) + part(s2)) / 2), notes };
+}
 async function verifyToggle(driver, e) {
   const ping = await driver.call('ping');
   const r0 = await driver.call('rectOf', e.anchor);

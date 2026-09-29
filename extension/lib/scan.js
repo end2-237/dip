@@ -1,13 +1,13 @@
 // Guided scan scenario (spec ch. 7). A resumable-ish state machine driven through a "driver":
 //   call(fn, ...args), setViewport(w,h), reload(), screenshot(clip?), fullPage?(), wheel(x,y,dy), mouseMove(x,y)
 // Each step has a timeout; a failed step is logged and does not stop the scan.
-import { analyze } from './analyzer.js';
+import { analyze, analyzeScene } from './analyzer.js';
 
 export const DEFAULT_OPTIONS = {
   breakpoints: [1440, 1024, 390],
   heights: { 1440: 900, 1024: 768, 390: 844 },
   consent: 'reject', // reject | hide | none
-  maxHovers: 20,
+  maxHovers: 30,
   maxRefEffects: 10,
   mouseSweep: true,
   includeAssets: true, // study mode: download images/fonts into the pack
@@ -156,6 +156,12 @@ export async function runScan(driver, meta, options, onProgress) {
   await step('track-sections', 5000, () => call('trackRects', sections0.map((s) => s.nid)));
   await step('scroll-pass', o.maxScrollMs + 10000, async () => {
     await call('mark', 'scroll');
+    cap.scene = [];
+    const sample = async () => {
+      const sc = await call('sceneSample').catch(() => null);
+      if (sc && cap.scene.length < 600) cap.scene.push(sc);
+    };
+    await sample();
     const t0 = Date.now();
     let pos = await call('scrollPos');
     let docH = await call('docHeight');
@@ -166,11 +172,13 @@ export async function runScan(driver, meta, options, onProgress) {
       await driver.wheel(6, Math.round(vh / 2), o.scrollStepPx + Math.round(Math.random() * 20 - 10));
       await sleep(o.scrollStepMs + Math.round(Math.random() * 30));
       const p = await call('scrollPos');
+      await sample();
       if (p <= pos + 1) stuck++;
       else stuck = 0;
       pos = p;
       if (sections0.length && nextPause < sections0.length && pos >= sections0[nextPause].top) {
         await sleep(500);
+        await sample(); // décor after a section's own transition settled
         nextPause++;
       }
       if (stuck > 12) {
@@ -181,6 +189,19 @@ export async function runScan(driver, meta, options, onProgress) {
     }
     await sleep(800);
     cap.scrollPass = { reached: pos, docHeight: docH, ms: Date.now() - t0 };
+  });
+  // décor changes: park mid-change and wait — an intermediate colour at rest means the change is scrubbed
+  cap.sceneChecks = [];
+  await step('scene-checks', 20000, async () => {
+    const pre = analyzeScene({ scene: cap.scene }, { sections: [] }, vh);
+    for (const sh of pre.shifts.slice(0, 6)) {
+      const mid = Math.round((sh.startScroll + sh.endScroll) / 2);
+      await call('scrollToY', mid, 300);
+      await sleep(1300);
+      const sc = await call('sceneSample');
+      cap.sceneChecks.push({ mid, bg: sc && sc.bg });
+    }
+    await call('scrollToY', 0, 300);
   });
 
   // ---------------------------------------------------------------- snapshots at main breakpoint
@@ -193,6 +214,7 @@ export async function runScan(driver, meta, options, onProgress) {
     d.dom = await step(`dom-${bp}`, 20000, () => call('snapshotDOM', { maxNodes: 2500 }));
     d.tokens = await step(`tokens-${bp}`, 30000, () => call('getTokens'));
     d.grid = await step(`grid-${bp}`, 10000, () => call('getGrid'));
+    if (bp === main) d.mediaGroups = (await step(`media-groups-${bp}`, 8000, () => call('mediaGroups', 12))) || [];
     // section references
     for (const s of d.sections) {
       await step(`ref-${bp}-${s.id}`, 12000, async () => {
@@ -276,8 +298,18 @@ export async function runScan(driver, meta, options, onProgress) {
             const dx = rMag.x - rAfter.x, dy = rMag.y - rAfter.y;
             if (Math.hypot(dx, dy) > 2) magnetic = { maxShiftPx: Math.round(Math.hypot(dx, dy) * 10) / 10, offsetPx: Math.round(Math.hypot(r.w * 0.3, r.h * 0.3)), strength: Math.round((Math.hypot(dx, dy) / Math.hypot(r.w * 0.3, r.h * 0.3)) * 100) / 100 };
           }
+          // titles and large text: traverse slowly from left to right (letter-by-letter / scramble / skew effects)
+          let sweep = false;
+          if (it.heading || r.w > 320) {
+            sweep = true;
+            for (let k = 0; k <= 14; k++) {
+              await driver.mouseMove(r.x + 4 + ((r.w - 8) * k) / 14, cy + Math.sin(k / 2) * Math.min(12, r.h / 4));
+              await sleep(55);
+            }
+            await sleep(500);
+          }
           const diff = diffStyles(before, after);
-          const entry = { target: { selector: it.selector, nid: it.nid, rect: it.rect }, diff, magnetic, transition: before && before.transitions, shots: [] };
+          const entry = { target: { selector: it.selector, nid: it.nid, rect: it.rect }, why: it.why, heading: !!it.heading, sweep, diff, magnetic, transition: before && before.transitions, shots: [] };
           if ((diff.length || magnetic) && shots < 24) {
             const key = `reference/${main}/hover/h${String(cap.hovers.length + 1).padStart(2, '0')}`;
             // re-shoot before/after cleanly
@@ -372,7 +404,7 @@ export async function runScan(driver, meta, options, onProgress) {
         if (await backHome(await call('toggleState', 'body'))) break;
       }
       // buttons: :active / pressed states (released outside the button so that no click fires)
-      const items = ((await call('listInteractive', 30)) || []).filter((it) => it.tag !== 'a').slice(0, 6);
+      const items = ((await call('listInteractive', 30)) || []).filter((it) => it.tag !== 'a' && !it.heading && it.why !== 'css').slice(0, 6);
       for (const it of items) {
         try {
           const docH = await call('docHeight');
@@ -464,6 +496,105 @@ export async function runScan(driver, meta, options, onProgress) {
         const r = await call('rectOf', firstTab.nid).catch(() => null);
         if (r && r.y >= 0 && r.y < vh) await driver.mouseClick(r.x + r.w / 2, r.y + r.h / 2);
       }
+    });
+  }
+
+  // ---------------------------------------------------------------- 7d. click feedback (navigation blocked)
+  cap.clicks = [];
+  if (driver.capabilities.trustedInput) {
+    progress(8, 'click', 76);
+    await step('clicks', 45000, async () => {
+      await call('guardNav', true);
+      const list = (await call('listClickables', 6)) || [];
+      for (const it of list) {
+        try {
+          const docH = await call('docHeight');
+          await call('scrollToY', Math.max(0, Math.min(docH - vh, it.rect.y - vh / 2)), 200);
+          const r = await call('rectOf', it.nid);
+          if (!r || r.y < 0 || r.y + r.h > vh || r.w < 2) continue;
+          const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+          await driver.mouseMove(cx, cy);
+          await sleep(450);
+          const before = await call('styleSnapshot', it.nid);
+          const y0 = await call('scrollPos');
+          const t0 = await call('mark', 'click-feedback');
+          await driver.mouseClick(cx, cy);
+          await sleep(160);
+          const during = await call('styleSnapshot', it.nid);
+          await sleep(900);
+          const after = await call('styleSnapshot', it.nid);
+          const st = await call('toggleState', 'body');
+          if (await backHome(st)) continue;
+          if (Math.abs((await call('scrollPos')) - y0) > 4) continue; // the click scrolled the page: not a feedback effect
+          const diff = diffStyles(before, during);
+          const stays = diffStyles(before, after);
+          if (diff.length || stays.length) cap.clicks.push({ target: { selector: it.selector, nid: it.nid, rect: it.rect }, diff, stays, t: t0 });
+          if (st.overlays && st.overlays.length && driver.key) await driver.key('Escape');
+          await driver.mouseMove(4, 4);
+          await sleep(300);
+        } catch (e) {
+          log.push({ step: 'click ' + it.selector, level: 'warn', error: String(e.message || e) });
+        }
+      }
+      await call('guardNav', false);
+    });
+  }
+
+  // ---------------------------------------------------------------- 7e. drag (galleries, sliders)
+  cap.drags = [];
+  if (driver.capabilities.trustedInput && driver.mouseDown && driver.mouseDrag) {
+    progress(8, 'drag', 78);
+    await step('drags', 45000, async () => {
+      await call('guardNav', true);
+      const list = (await call('listDraggables', 3)) || [];
+      for (const it of list) {
+        try {
+          const docH = await call('docHeight');
+          await call('scrollToY', Math.max(0, Math.min(docH - vh, it.rect.y - vh / 2 + it.rect.h / 2)), 250);
+          const r = await call('rectOf', it.nid);
+          if (!r || r.y < 0 || r.y + r.h > vh) continue;
+          const cy = r.y + r.h / 2;
+          const x0 = Math.min(vw - 40, r.x + r.w * 0.7), dx = -Math.min(360, r.w * 0.45);
+          const key = `reference/${main}/drag/d${String(cap.drags.length + 1).padStart(2, '0')}`;
+          await driver.mouseMove(x0, cy);
+          await sleep(300);
+          await shoot(key + '_before.png', { x: 0, y: Math.max(0, r.y), w: vw, h: Math.min(vh - Math.max(0, r.y), r.h) });
+          // content that moves by itself (marquee, autoplay) is not evidence of a drag
+          const sA = await call('dragState', it.nid);
+          await sleep(350);
+          const s0 = await call('dragState', it.nid);
+          if (!it.grab && sA && s0 && Math.abs(s0.x - sA.x) + Math.abs(s0.scrollLeft - sA.scrollLeft) > 3) continue;
+          const t0 = await call('mark', 'drag');
+          await driver.mouseDown(x0, cy);
+          // fast flick: 10 moves in ~200 ms, then release (inertia shows after the release)
+          for (let k = 1; k <= 10; k++) {
+            await driver.mouseDrag(x0 + (dx * k) / 10, cy);
+            await sleep(20);
+          }
+          const sRelease = await call('dragState', it.nid);
+          await driver.mouseUp(x0 + dx, cy);
+          const settle = await call('waitStable', 250, 3000).catch(() => null);
+          const s1 = await call('dragState', it.nid);
+          await shoot(key + '_after.png', { x: 0, y: Math.max(0, r.y), w: vw, h: Math.min(vh - Math.max(0, r.y), r.h) });
+          const moved = s0 && s1 ? Math.round(s1.x - s0.x + (s0.scrollLeft - s1.scrollLeft)) : 0;
+          const atRelease = s0 && sRelease ? Math.round(sRelease.x - s0.x + (s0.scrollLeft - sRelease.scrollLeft)) : 0;
+          if (Math.abs(moved) > 8 || Math.abs(atRelease) > 8)
+            cap.drags.push({ target: { selector: it.selector, nid: it.nid, rect: it.rect }, why: it.why, grab: it.grab, dragPx: Math.round(dx), atReleasePx: atRelease, movedPx: moved, inertia: atRelease ? Math.round((moved / atRelease) * 100) / 100 : null, settleMs: settle ? settle.ms : null, t: t0, shots: [key + '_before.png', key + '_after.png'] });
+          // drag back so the page returns to its initial state
+          await driver.mouseDown(x0 + dx, cy);
+          for (let k = 1; k <= 10; k++) {
+            await driver.mouseDrag(x0 + dx - (dx * k) / 10, cy);
+            await sleep(20);
+          }
+          await driver.mouseUp(x0, cy);
+          await sleep(900);
+          if (await backHome(await call('toggleState', 'body'))) continue;
+        } catch (e) {
+          log.push({ step: 'drag ' + it.selector, level: 'warn', error: String(e.message || e) });
+        }
+      }
+      await call('guardNav', false);
+      await driver.mouseMove(4, 4);
     });
   }
 

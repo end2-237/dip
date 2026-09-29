@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { zip } from '../extension/lib/zip.js';
+import { serve } from '../cli/lib/serve.js';
 
 const enc = (s) => new TextEncoder().encode(typeof s === 'string' ? s : JSON.stringify(s));
 async function fakePack(tmp, domain, fx) {
@@ -47,7 +48,7 @@ test('dashboard: import packs, browse, prepare commands', { timeout: 180000 }, a
     await page.keyboard.press('Escape');
     // animations index
     await page.click('nav a[data-page="motion"]');
-    await page.waitForFunction(() => document.querySelectorAll('.mo-row').length === 2);
+    await page.waitForFunction(() => document.querySelectorAll('#mo-list .fx').length === 2);
     // create: brief → command + brief file
     await page.click('nav a[data-page="create"]');
     await page.fill('[name=company]', 'Maison Test');
@@ -75,6 +76,53 @@ test('dashboard: import packs, browse, prepare commands', { timeout: 180000 }, a
     assert.deepEqual(errors, []);
   } finally {
     await ctx.close();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('dashboard: one-click re-dissection of an old pack keeps its DNA', { timeout: 420000 }, async () => {
+  const { chromium } = await import('playwright');
+  const srv = await serve('fixtures', 0);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dipre-'));
+  const url = `${srv.url}/css-only/`;
+  const root = 'dip-pack_old-scan_2026-01-01/';
+  const files = [
+    { path: root + 'manifest.json', data: enc({ url, date: '2026-01-01T10:00:00Z', tier: 'A', mode: 'study', analyzerVersion: '0.1.0', detectedStack: [] }) },
+    { path: root + 'DESIGN_DNA.md', data: enc('# DNA written by Claude\n') },
+    { path: root + 'dna.json', data: enc({ keywords: ['editorial'] }) },
+  ];
+  const zp = path.join(tmp, 'old.zip');
+  fs.writeFileSync(zp, await zip(files));
+  const ext = path.resolve('extension');
+  const ctx = await chromium.launchPersistentContext(path.join(tmp, 'profile'), { headless: false, args: ['--headless=new', `--disable-extensions-except=${ext}`, `--load-extension=${ext}`] });
+  try {
+    let [sw] = ctx.serviceWorkers();
+    if (!sw) sw = await ctx.waitForEvent('serviceworker');
+    const id = new URL(sw.url()).host;
+    const page = await ctx.newPage();
+    await page.goto(`chrome-extension://${id}/dashboard.html?opfs=1#library`);
+    await page.evaluate(() => chrome.storage.local.set({ dipSettings: { breakpoints: [1440], maxHovers: 4, consent: 'none' } }));
+    await page.setInputFiles('#file-import', [zp]);
+    await page.waitForSelector('#lib-grid .card .badge.warn', { timeout: 30000 });
+    page.on('dialog', (d) => d.accept());
+    await page.click('#btn-redissect-all');
+    await page.waitForFunction(() => document.querySelector('#job').hidden && !document.querySelector('#lib-grid .badge.warn') && document.querySelectorAll('#lib-grid .card').length === 1, null, { timeout: 360000 });
+    const out = await page.evaluate(async () => {
+      const r = await navigator.storage.getDirectory();
+      const packs = await r.getDirectoryHandle('packs');
+      const names = [];
+      for await (const [n] of packs.entries()) names.push(n);
+      const d = await packs.getDirectoryHandle(names[0]);
+      const txt = async (f) => (await (await d.getFileHandle(f)).getFile()).text();
+      return { names, manifest: JSON.parse(await txt('manifest.json')), dna: await txt('DESIGN_DNA.md') };
+    });
+    assert.equal(out.names.length, 1);
+    assert.notEqual(out.names[0], 'dip-pack_old-scan_2026-01-01');
+    assert.equal(out.manifest.analyzerVersion, '0.2.0');
+    assert.match(out.dna, /DNA written by Claude/);
+  } finally {
+    await ctx.close();
+    await srv.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
