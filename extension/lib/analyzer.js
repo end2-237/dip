@@ -35,6 +35,8 @@ function phaseKind(p) {
   if (p.startsWith('mouse')) return 'mouse';
   if (p.startsWith('bp')) return 'breakpoint';
   if (p === 'manual') return 'manual';
+  if (p.startsWith('press')) return 'press';
+  if (p.startsWith('toggle')) return 'toggle';
   return p;
 }
 
@@ -133,6 +135,8 @@ function gsapEffects(cap, ctx) {
     if (vars && vars.repeat === -1) return 'time-loop';
     const k = phaseKind(phase);
     if (k === 'manual') return ctx.manualTrigger(t0);
+    if (k === 'press') return 'press';
+    if (k === 'toggle') return 'click';
     if (k === 'hover') return 'hover';
     if (k === 'mouse') return 'mouse-move';
     if (k === 'scroll') return 'scroll-enter';
@@ -272,7 +276,7 @@ function waapiEffects(cap, ctx) {
     const kind = a.type === 'CSSTransition' ? 'css-transition' : a.type === 'CSSAnimation' ? 'css-keyframes' : 'waapi';
     const scrollTl = /ScrollTimeline|ViewTimeline/.test(a.timeline || '');
     const phase = phaseKind(phaseAt(ctx.marks, a.t));
-    let trigger = scrollTl ? 'scroll-scrub' : tm.iterations === 'Infinity' || tm.iterations === Infinity || tm.iterations > 50 ? 'time-loop' : phase === 'manual' ? ctx.manualTrigger(a.t) : phase === 'hover' ? 'hover' : phase === 'scroll' ? 'scroll-enter' : 'load';
+    let trigger = scrollTl ? 'scroll-scrub' : tm.iterations === 'Infinity' || tm.iterations === Infinity || tm.iterations > 50 ? 'time-loop' : phase === 'manual' ? ctx.manualTrigger(a.t) : phase === 'press' ? 'press' : phase === 'toggle' ? 'click' : phase === 'hover' ? 'hover' : phase === 'scroll' ? 'scroll-enter' : 'load';
     let ease = tm.easing || 'linear';
     // CSS animations carry animation-timing-function on each keyframe
     const kfEase = (a.keyframes || []).map((k) => k.easing).find((e) => e && e !== 'linear');
@@ -371,6 +375,13 @@ function activeChannels(tk) {
     }
     if (mx - mn > thr) out.push({ ch, name, range: mx - mn, min: mn, max: mx });
   }
+  // colour / radius / letter-spacing / variable font / SVG stroke animations
+  const extraProps = new Map();
+  for (const [, p, v] of tk.extra || []) {
+    if (!extraProps.has(p)) extraProps.set(p, new Set());
+    extraProps.get(p).add(v);
+  }
+  for (const [p, vals] of extraProps) if (vals.size > 1) out.push({ ch: 'extra:' + p, name: p, range: 0.5 });
   if (tk.clip && tk.clip.length > 1) out.push({ ch: 'clip', name: 'clipPath', range: 1 });
   if (tk.filter && tk.filter.length > 1) out.push({ ch: 'filter', name: 'filter', range: 1 });
   return out.sort((a, b) => b.range - a.range);
@@ -413,6 +424,9 @@ function classifyDriver(tk, main, ctx) {
   // loop: keeps changing across phases without scroll or mouse
   const segs = segmentsOf(tk, main.ch, 150);
   const longest = segs.reduce((a, s) => Math.max(a, tk.t[s.end] - tk.t[s.start]), 0);
+  // pointer followers (often lerped: they keep settling between pointer events, so the change ratio is low)
+  const pointerMoves = new Set(tk.mx.map((x, i) => x + ',' + tk.my[i])).size;
+  if ((corrMx > 0.75 || corrMy > 0.75) && pointerMoves > 10 && changes > 8) return { driver: 'mouse', corrMx: r2(corrMx), corrMy: r2(corrMy) };
   if (longest > 4000 && scrollRatio < 0.7 && mouseRatio < 0.7) return { driver: 'loop', longest };
   if (scrollRatio > 0.8 && corrS > 0.6 && changes > 8) return { driver: 'scroll', corr: r2(corrS) };
   if (mouseRatio > 0.8 && (corrMx > 0.6 || corrMy > 0.6) && changes > 8) return { driver: 'mouse', corrMx: r2(corrMx), corrMy: r2(corrMy) };
@@ -430,9 +444,24 @@ function measureTrack(tk, ctx) {
   ctx = ctx || {};
   const chans = activeChannels(tk);
   if (!chans.length) return null;
-  const main = chans.find((c) => c.ch !== 'clip' && c.ch !== 'filter') || chans[0];
+  const numeric = (c) => c.ch !== 'clip' && c.ch !== 'filter' && !c.ch.startsWith('extra:');
+  const main = chans.find(numeric) || chans[0];
   const drv = classifyDriver(tk, main, ctx);
   const m = { nid: tk.nid, selector: tk.sel, tag: tk.tag, text: tk.text, rect0: tk.rect0, parentNid: tk.parentNid, parentSel: tk.parentSel, index: tk.index, isMedia: tk.isMedia, position: tk.position, channels: chans.map((c) => c.name), driver: drv.driver, driverInfo: drv };
+  if (main.ch.startsWith('extra:')) {
+    const prop = main.name;
+    const list = (tk.extra || []).filter((x) => x[1] === prop);
+    m.values = {};
+    for (const c of chans.filter((c) => c.ch.startsWith('extra:'))) {
+      const l = (tk.extra || []).filter((x) => x[1] === c.name);
+      m.values[c.name] = { from: l[0][2], to: l[l.length - 1][2] };
+    }
+    m.start = tk.t[list[0][0]] || tk.t[0];
+    m.duration = r3(((tk.t[list[list.length - 1][0]] || m.start) - m.start) / 1000);
+    m.phase = phaseKind(phaseAt(ctx.marks, m.start));
+    m.driver = 'time';
+    return m;
+  }
   if (main.ch === 'clip' || main.ch === 'filter') {
     const list = tk[main.ch];
     m.values = { [main.name]: { from: list[0][1], to: list[list.length - 1][1] } };
@@ -466,6 +495,11 @@ function measureTrack(tk, ctx) {
         m.values[c.name] = { from: l[0][1], to: l[l.length - 1][1] };
         continue;
       }
+      if (c.ch.startsWith('extra:')) {
+        const l = (tk.extra || []).filter((x) => x[1] === c.name);
+        m.values[c.name] = { from: l[0][2], to: l[l.length - 1][2] };
+        continue;
+      }
       m.values[c.name] = { from: tk[c.ch][seg.start], to: tk[c.ch][seg.end] };
     }
     m.curve = nrm.x.map((x, i) => [r3(x), r3(nrm.y[i])]);
@@ -492,7 +526,7 @@ function measureTrack(tk, ctx) {
     m.fit = act.length > 4 ? fitEase(nrm.x, nrm.y) : null;
     m.values = {};
     for (const c of chans) {
-      if (c.ch === 'clip' || c.ch === 'filter') continue;
+      if (c.ch === 'clip' || c.ch === 'filter' || c.ch.startsWith('extra:')) continue;
       m.values[c.name] = { atStart: c.ch === main.ch ? act[0][1] : null, atEnd: c.ch === main.ch ? act[act.length - 1][1] : null, min: c.min, max: c.max };
     }
     m.ratio = r3((act[act.length - 1][1] - act[0][1]) / Math.max(1, act[act.length - 1][0] - act[0][0])); // px of motion per px of scroll
@@ -532,7 +566,7 @@ function measureTrack(tk, ctx) {
       m.mouse.lerp = cnt ? r3(lagSum / cnt) : null;
     }
     m.values = {};
-    for (const c of chans) if (c.ch !== 'clip' && c.ch !== 'filter') m.values[c.name] = { min: c.min, max: c.max };
+    for (const c of chans) if (c.ch !== 'clip' && c.ch !== 'filter' && !c.ch.startsWith('extra:')) m.values[c.name] = { min: c.min, max: c.max };
     m.phase = 'mouse';
   } else if (drv.driver === 'loop') {
     const v = tk[main.ch];
@@ -546,7 +580,7 @@ function measureTrack(tk, ctx) {
     const speed = median(speeds.filter((s) => Math.abs(s) < 5)) || 0;
     m.loop = { channel: main.name, speedPxPerS: r2(speed * 1000), min: main.min, max: main.max };
     m.values = {};
-    for (const c of chans) if (c.ch !== 'clip' && c.ch !== 'filter') m.values[c.name] = { min: c.min, max: c.max };
+    for (const c of chans) if (c.ch !== 'clip' && c.ch !== 'filter' && !c.ch.startsWith('extra:')) m.values[c.name] = { min: c.min, max: c.max };
     m.phase = 'loop';
   }
   return m;
@@ -588,7 +622,7 @@ function recorderEffects(cap, ctx, explainedNids) {
   for (const [, list] of groups) {
     list.sort((a, b) => (a.start || 0) - (b.start || 0));
     const m0 = list[0];
-    const trigger = m0.driver === 'scroll' ? 'scroll-scrub' : m0.driver === 'mouse' ? 'mouse-move' : m0.driver === 'loop' ? 'time-loop' : m0.phase === 'manual' ? ctx.manualTrigger(m0.start) : m0.phase === 'hover' ? 'hover' : m0.phase === 'scroll' ? 'scroll-enter' : 'load';
+    const trigger = m0.driver === 'scroll' ? 'scroll-scrub' : m0.driver === 'mouse' ? 'mouse-move' : m0.driver === 'loop' ? 'time-loop' : m0.phase === 'manual' ? ctx.manualTrigger(m0.start) : m0.phase === 'press' ? 'press' : m0.phase === 'toggle' ? 'click' : m0.phase === 'hover' ? 'hover' : m0.phase === 'scroll' ? 'scroll-enter' : 'load';
     const anim = { channels: m0.channels, values: m0.values };
     if (m0.driver === 'time') {
       anim.duration = r3(median(list.map((x) => x.duration)));
@@ -707,6 +741,207 @@ function classify(e, ctx) {
   if (e.trigger === 'hover') return 'hover-state';
   if (e.trigger === 'route-change') return 'page-transition';
   return 'other';
+}
+
+// ------------------------------------------------------------------ press / toggle interactions (scan steps)
+function interactionEffects(cap, ctx) {
+  const out = [];
+  for (const p of cap.presses || []) {
+    if (!p.diff || !p.diff.length) continue;
+    out.push({
+      _kind: 'interaction',
+      source: 'measured:press',
+      confidence: 0.8,
+      technique: 'css-transition',
+      trigger: 'press',
+      effect_type: 'press-hold',
+      targets: [p.target],
+      animation: { changes: p.diff.slice(0, 20), holdMs: p.holdMs },
+      shots: p.shots || [],
+      t: p.t || 0,
+    });
+  }
+  for (const g of cap.toggles || []) {
+    if (!g.changed) continue;
+    const type = g.kind === 'tab' ? 'tabs' : g.kind === 'accordion' ? 'accordion' : g.kind === 'menu' || g.coversViewport ? 'menu-overlay' : 'other';
+    out.push({
+      _kind: 'interaction',
+      source: 'measured:toggle',
+      confidence: 0.75,
+      technique: 'js-inline-style',
+      trigger: 'click',
+      effect_type: type,
+      targets: [g.target],
+      animation: { kind: g.kind, label: g.label, controls: g.controls, expanded: g.expanded, settleMs: g.settleMs, opened: g.opened, styleChanges: (g.diff || []).slice(0, 20) },
+      shots: g.shots || [],
+      t: g.t || 0,
+    });
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ 3D motion (Three.js camera / objects)
+const CH3 = [
+  ['px', 'position.x'],
+  ['py', 'position.y'],
+  ['pz', 'position.z'],
+  ['rx', 'rotation.x'],
+  ['ry', 'rotation.y'],
+  ['rz', 'rotation.z'],
+  ['sx', 'scale'],
+  ['fov', 'fov'],
+];
+function channels3(tk) {
+  const out = [];
+  for (const [ch, name] of CH3) {
+    const v = (tk[ch] || []).filter((x) => typeof x === 'number');
+    if (v.length < 3) continue;
+    const mn = Math.min(...v), mx = Math.max(...v);
+    const mean = v.reduce((a, b) => a + b, 0) / v.length;
+    const thr = ch.startsWith('r') ? 0.01 : ch === 'fov' ? 0.2 : Math.max(0.002, Math.abs(mean) * 0.002);
+    if (mx - mn > thr) out.push({ ch, name, range: mx - mn, min: mn, max: mx, rel: (mx - mn) / (thr * 10) });
+  }
+  return out.sort((a, b) => b.rel - a.rel);
+}
+function keyframes3(tk, chans, by) {
+  // value snapshots along scroll (forward only) or time, downsampled to ≤ 24 keys
+  const idx = [];
+  let last = -Infinity;
+  for (let i = 0; i < tk.t.length; i++) {
+    const k = by === 'scroll' ? tk.s[i] : tk.t[i];
+    if (by === 'scroll' && k <= last) continue;
+    last = k;
+    idx.push(i);
+  }
+  const step = Math.max(1, Math.ceil(idx.length / 24));
+  const keys = [];
+  for (let j = 0; j < idx.length; j += step) {
+    const i = idx[j];
+    const o = { [by === 'scroll' ? 'scroll' : 't']: by === 'scroll' ? tk.s[i] : tk.t[i] };
+    for (const c of chans) o[c.name] = tk[c.ch][i];
+    keys.push(o);
+  }
+  return keys;
+}
+function analyze3DMotion(cap, ctx) {
+  const tracks = (cap.three && cap.three.motion) || [];
+  const effects = [];
+  const vw = ctx.vw || 1440, vh = (cap.ping && cap.ping.vh) || 900;
+  for (const tk of tracks) {
+    const chans = channels3(tk);
+    if (!chans.length) continue;
+    const main = chans[0];
+    const drv = classifyDriver(tk, main, ctx);
+    const isCam = tk.kind === 'camera';
+    const who = isCam ? 'camera' : `object "${tk.label}"`;
+    const e = {
+      _kind: 'three',
+      source: 'read:three',
+      confidence: 0.9,
+      technique: 'three-scene',
+      targets: [{ selector: isCam ? 'three:camera' : `three:${tk.label}`, three: tk.key }],
+      section: null,
+      t: tk.t[0],
+      three: { object: isCam ? 'camera' : tk.label, kind: tk.kind, channels: chans.map((c) => c.name) },
+    };
+    if (drv.driver === 'scroll') {
+      const keys = keyframes3(tk, chans, 'scroll');
+      const pts = keys.map((k) => [k.scroll, k[main.name]]);
+      let i0 = 0, i1 = pts.length - 1;
+      while (i0 < i1 && pts[i0 + 1][1] === pts[0][1]) i0++;
+      while (i1 > i0 && pts[i1 - 1][1] === pts[pts.length - 1][1]) i1--;
+      const act = pts.slice(i0, i1 + 1);
+      if (act.length < 3) continue;
+      const nrm = normalize(act.map((p) => p[0]), act.map((p) => p[1]));
+      e.trigger = 'scroll-scrub';
+      e.effect_type = isCam ? 'camera-scroll-path' : '3d-object-motion';
+      e.animation = { channels: e.three.channels, scroll: { startPx: act[0][0], endPx: act[act.length - 1][0] }, keyframes: keys.slice(Math.max(0, i0 - 1), i1 + 2), ease: act.length >= 8 ? fitEase(nrm.x, nrm.y).best : 'none', mainChannel: main.name };
+      e.curve = nrm.x.map((x, i) => [r3(x), r3(nrm.y[i])]);
+      e.curveSource = 'three';
+    } else if (drv.driver === 'mouse') {
+      // value = a + gain * pointer (pointer normalised to -1..1)
+      const gains = {};
+      for (const c of chans) {
+        const v = tk[c.ch];
+        const nx = tk.mx.map((x) => (x / vw) * 2 - 1), ny = tk.my.map((y) => (y / vh) * 2 - 1);
+        const fit = (m) => {
+          const n = v.length;
+          const mm = m.reduce((a, b) => a + b, 0) / n, mv = v.reduce((a, b) => a + b, 0) / n;
+          let num = 0, den = 0;
+          for (let i = 0; i < n; i++) {
+            num += (m[i] - mm) * (v[i] - mv);
+            den += (m[i] - mm) ** 2;
+          }
+          return den ? r3(num / den) : 0;
+        };
+        gains[c.name] = { perPointerX: fit(nx), perPointerY: fit(ny) };
+      }
+      e.trigger = 'mouse-move';
+      e.effect_type = !isCam && main.ch.startsWith('r') ? 'tilt-3d' : 'mouse-parallax';
+      e.animation = { channels: e.three.channels, mouse: { normalised: 'pointer -1..1 across the viewport', gains }, range: Object.fromEntries(chans.map((c) => [c.name, [r3(c.min), r3(c.max)]])) };
+    } else if (drv.driver === 'loop') {
+      const speeds = {};
+      for (const c of chans) {
+        const v = tk[c.ch], t = tk.t;
+        const d = [];
+        for (let i = 1; i < v.length; i++) if (t[i] - t[i - 1] > 0 && t[i] - t[i - 1] < 250) d.push(((v[i] - v[i - 1]) / (t[i] - t[i - 1])) * 1000);
+        speeds[c.name] = r3(median(d) || 0);
+      }
+      e.trigger = 'time-loop';
+      e.effect_type = '3d-object-motion';
+      e.animation = { channels: e.three.channels, loop: { perSecond: speeds, note: 'rotation in radians/s, position in scene units/s' }, range: Object.fromEntries(chans.map((c) => [c.name, [r3(c.min), r3(c.max)]])) };
+    } else {
+      const segs = segmentsOf(tk, main.ch, 200).filter((sg) => sg.end - sg.start >= 3);
+      if (!segs.length) continue;
+      const sg = segs.sort((a, b) => Math.abs(tk[main.ch][b.end] - tk[main.ch][b.start]) - Math.abs(tk[main.ch][a.end] - tk[main.ch][a.start]))[0];
+      const ts = tk.t.slice(sg.start, sg.end + 1), vs = tk[main.ch].slice(sg.start, sg.end + 1);
+      const nrm = normalize(ts, vs);
+      const phase = phaseKind(phaseAt(ctx.marks, ts[0]));
+      e.trigger = phase === 'hover' ? 'hover' : phase === 'scroll' ? 'scroll-enter' : phase === 'manual' ? ctx.manualTrigger(ts[0]) : phase === 'press' ? 'press' : phase === 'toggle' ? 'click' : 'load';
+      e.effect_type = isCam ? 'camera-scroll-path' : '3d-object-motion';
+      if (isCam && e.trigger !== 'scroll-enter') e.effect_type = '3d-object-motion';
+      e.animation = {
+        channels: e.three.channels,
+        duration: r3((ts[ts.length - 1] - ts[0]) / 1000),
+        ease: ts.length >= 8 ? fitEase(nrm.x, nrm.y).best : 'power2.out',
+        from: Object.fromEntries(chans.map((c) => [c.name, tk[c.ch][sg.start]])),
+        to: Object.fromEntries(chans.map((c) => [c.name, tk[c.ch][sg.end]])),
+      };
+      e.curve = nrm.x.map((x, i) => [r3(x), r3(nrm.y[i])]);
+      e.curveSource = 'three';
+      e.t = ts[0];
+    }
+    effects.push(e);
+  }
+  return effects;
+}
+
+// Post-processing passes recognised from Three.js / pmndrs program names and shader code.
+const POST = [
+  ['bloom', /LuminosityHighPass|UnrealBloom|Bloom|luminosityThreshold/i],
+  ['depth-of-field', /Bokeh|DepthOfField|\bdof\b|focalLength|focusDistance/i],
+  ['chromatic-aberration', /ChromaticAberration|RGBShift|rgbShift|\bchromatic/i],
+  ['film-grain', /FilmShader|FilmPass|grain|nIntensity/i],
+  ['vignette', /Vignette|vignette/i],
+  ['fxaa-smaa', /FXAA|SMAA/i],
+  ['noise', /NoiseEffect|\bnoise\s*\(/i],
+  ['glitch', /Glitch/i],
+  ['tone-mapping-output', /OutputPass|ToneMapping|OutputShader/i],
+  ['motion-blur', /MotionBlur|velocity/i],
+  ['pixelation', /Pixelat/i],
+  ['outline', /Outline/i],
+];
+function detectPostprocessing(progs) {
+  const found = new Map();
+  for (const p of progs || []) {
+    const src = (p.vertex || '') + '\n' + (p.fragment || '');
+    const name = (/#define SHADER_NAME ([^\n]*)/.exec(src) || [])[1] || '';
+    // full-screen passes draw a single quad: they read a tDiffuse / inputBuffer texture
+    const fullscreen = /tDiffuse|inputBuffer|uScene|tInput/.test(src);
+    if (!fullscreen && !name) continue;
+    for (const [label, re] of POST) if (re.test(name) || (fullscreen && re.test(src))) found.set(label, (found.get(label) || 0) + 1);
+  }
+  return [...found.keys()];
 }
 
 // The same pattern applied to many elements (cards, list items, slides…) is one effect with many targets.
@@ -1012,6 +1247,11 @@ function summarizeScene(three, progs) {
   const programTypes = count(progs.map((p) => threeMeta((p.vertex || '') + (p.fragment || ''))), (m) => (m.name ? `${m.type}:${m.name}` : m.type || 'raw'));
   return {
     revision: three.revision,
+    postprocessing: detectPostprocessing(progs),
+    animationClips: objs.filter((o) => o.clips).map((o) => ({ object: o.name || o.type, clips: o.clips })),
+    skinnedMeshes: objs.filter((o) => o.skinned).length,
+    morphTargets: objs.filter((o) => o.morphTargets).map((o) => ({ object: o.name || o.type, ...o.morphTargets })),
+    animatedObjects: (three.motion || []).map((tk) => tk.label),
     renderers: three.renderers,
     camera: three.camera,
     scenes: (three.scenes || []).length,
@@ -1040,7 +1280,8 @@ function estimateTier(analysis, cap) {
   const hasGL = webgl.cards.length > 0 || (cap.webgl && cap.webgl.contexts && cap.webgl.contexts.some((c) => /webgl/.test(c.type)));
   const meshes = three ? three.scenes.reduce((a, s) => a + s.objects.filter((o) => o.materials).length, 0) : 0;
   if (webgl.wgsl || (webgl.canvas2d || []).some((c) => Object.values(c.calls || {}).reduce((a, b) => a + b, 0) > 5000)) return { tier: 'D', why: 'WebGPU compute or heavy procedural canvas rendering' };
-  if (meshes > 3 || (three && three.scenes.some((s) => s.objects.some((o) => o.geometry && o.geometry.vertices > 5000)))) return { tier: 'C', why: `Three.js scene with ${meshes} meshes / models` };
+  const heavy = three && three.scenes.some((s) => s.objects.some((o) => (o.geometry && o.geometry.vertices > 20000) || o.clips || o.skinned));
+  if (meshes > 15 || heavy) return { tier: 'C', why: `Three.js scene with ${meshes} meshes${heavy ? ', models / animation clips' : ''}` };
   if (hasGL) return { tier: 'B', why: 'WebGL shaders (2D effects)' };
   return { tier: 'A', why: 'DOM/CSS/GSAP animations and smooth scroll only' };
 }
@@ -1060,6 +1301,12 @@ export function analyze(cap) {
     preloaderSels: new Set(((cap.intro && cap.intro.preloader) || []).map((p) => p.selector)),
     log,
   };
+  // section of the main WebGL canvas ('global' when it is a fixed full-viewport background)
+  const glc = ((cap.webgl && cap.webgl.contexts) || []).filter((c) => /webgl/.test(c.type) && c.canvas && c.canvas.rect).sort((a, b) => b.canvas.rect.w * b.canvas.rect.h - a.canvas.rect.w * a.canvas.rect.h)[0];
+  if (glc) {
+    const r = glc.canvas.rect, vh0 = (cap.ping && cap.ping.vh) || 900;
+    ctx.canvasSection = r.w >= ctx.vw * 0.9 && r.h >= vh0 * 0.9 && r.y < 5 ? 'global' : sectionFor(sections, r.y);
+  }
   const clicks = ((cap.motion && cap.motion.events) || []).filter((e) => e.type === 'click').map((e) => e.t);
   // manual recording: an animation that starts < 600ms after a click is click-triggered, otherwise pointer-driven
   ctx.manualTrigger = (t) => (clicks.some((c) => t >= c && t - c < 600) ? 'click' : 'hover');
@@ -1071,6 +1318,7 @@ export function analyze(cap) {
   // pinned elements are moved by ScrollTrigger itself; hovered elements are covered by hover effects
   for (const st of (cap.motion && cap.motion.gsap && cap.motion.gsap.scrollTriggers) || []) if (st.pinNid) explained.add(st.pinNid);
   for (const h of cap.hovers || []) if (h.target && h.target.nid && (h.diff.length || h.magnetic)) explained.add(h.target.nid);
+  for (const p of cap.presses || []) if (p.target && p.target.nid && p.diff && p.diff.length) explained.add(p.target.nid);
   // split units explained by a gsap/waapi effect on the parent
   for (const s of ctx.splits) if (explained.has(s.nid)) (s.units || []).forEach((u) => explained.add(u));
   const { effects: recFx } = recorderEffects(cap, ctx, explained);
@@ -1117,7 +1365,8 @@ export function analyze(cap) {
     h.technique = 'css-transition';
     return false;
   });
-  let all = [...gsapFx, ...waapiKept, ...recFx, ...hoverFx];
+  const threeFx = analyze3DMotion(cap, ctx);
+  let all = [...gsapFx, ...waapiKept, ...recFx, ...hoverFx, ...threeFx, ...interactionEffects(cap, ctx)];
 
   // route transitions
   const routes = (cap.motion && cap.motion.routes) || [];
@@ -1144,6 +1393,32 @@ export function analyze(cap) {
     else if (e._kind === 'hover' && t0 && t0.rect) y = t0.rect.y;
     if (e.scrollTrigger && e.scrollTrigger.triggerNid && cap.nidRects && cap.nidRects[e.scrollTrigger.triggerNid]) y = cap.nidRects[e.scrollTrigger.triggerNid].y;
     e.section = e.effect_type === 'custom-cursor' || e.effect_type === 'page-transition' ? 'global' : sectionFor(sections, y);
+    if (e._kind === 'three') e.section = ctx.canvasSection || 'global';
+  }
+  // motion recorded right after a toggle click belongs to that toggle (menu fade, accordion height…)
+  const toggles = all.filter((e) => e.source === 'measured:toggle');
+  if (toggles.length) {
+    all = all.filter((e) => {
+      if (e.source === 'measured:toggle' || e.trigger !== 'click' || e._kind === 'three') return true;
+      const tg = toggles.filter((g) => e.t >= g.t - 50 && e.t <= g.t + 2500).sort((a, b) => b.t - a.t)[0];
+      if (!tg) return true;
+      const a = e.animation || {};
+      tg.animation.motion = tg.animation.motion || [];
+      tg.animation.motion.push({ targets: (e.targets || []).slice(0, 4).map((t) => t.selector), properties: a.properties || a.name || a.channels, duration: a.duration, delay: a.delay, ease: a.ease, ease_bezier: a.ease_bezier, values: a.values, keyframes: a.keyframes });
+      return false;
+    });
+  }
+  // press motion recorded on the pressed element / inside it
+  const presses = all.filter((e) => e.source === 'measured:press');
+  if (presses.length) {
+    all = all.filter((e) => {
+      if (e.source === 'measured:press' || e.trigger !== 'press') return true;
+      const p = presses.find((x) => (e.targets || []).some((t) => (x.targets || []).some((pt) => pt.nid === t.nid || (t.selector || '').startsWith(pt.selector || '\u0000'))));
+      if (!p) return true;
+      p.animation.motion = p.animation.motion || [];
+      p.animation.motion.push({ targets: (e.targets || []).slice(0, 4).map((t) => t.selector), duration: e.animation && e.animation.duration, ease: e.animation && e.animation.ease, values: e.animation && e.animation.values });
+      return false;
+    });
   }
   all = mergeSimilar(all);
   // Drop trivial measured noise: single-target, sub-50ms, tiny changes
@@ -1222,4 +1497,4 @@ function risksOf(a, cap) {
   return r;
 }
 
-export { sectionFor, pearson, measureTrack };
+export { sectionFor, pearson, measureTrack, analyze3DMotion };

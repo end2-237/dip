@@ -327,6 +327,145 @@ export async function runScan(driver, meta, options, onProgress) {
     });
   } else cap.cursor = await step('cursor', 5000, () => call('findCursorCandidates'));
 
+  // guard: an interaction must never leave the page; go back if it navigated
+  const startUrl = cap.meta.url;
+  const backHome = async (st) => {
+    if (st && st.url && st.url.split('#')[0] !== startUrl.split('#')[0] && driver.navigate) {
+      log.push({ step: 'interaction', level: 'warn', error: 'navigated to ' + st.url + ', going back' });
+      await driver.navigate(startUrl);
+      await sleep(2500);
+      await call('waitStable', 500, 6000).catch(() => {});
+      return true;
+    }
+    return false;
+  };
+
+  // ---------------------------------------------------------------- 7b. press & hold
+  cap.presses = [];
+  if (driver.capabilities.trustedInput && driver.mouseDown) {
+    progress(8, 'press', 73);
+    await step('press-hold', 60000, async () => {
+      await call('mark', 'press');
+      const secs = cap.breakpoints[String(main)].sections || [];
+      // neutral points (canvas / hero backgrounds often react to a long press)
+      for (const s of secs.slice(0, 2)) {
+        await call('scrollToY', s.top, 250);
+        await sleep(300);
+        const pts = [[vw * 0.5, vh * 0.55], [vw * 0.7, vh * 0.4], [vw * 0.3, vh * 0.7]];
+        const pt = [];
+        for (const p of pts) if (await call('isNeutralPoint', p[0], p[1])) {
+          pt.push(p);
+          break;
+        }
+        if (!pt.length) continue;
+        const [x, y] = pt[0];
+        await driver.mouseMove(x, y);
+        await sleep(300);
+        const key = `reference/${main}/press/p${String(cap.presses.length + 1).padStart(2, '0')}`;
+        await shoot(key + '_before.png');
+        await driver.mouseDown(x, y);
+        await sleep(1300);
+        await shoot(key + '_hold.png');
+        await driver.mouseUp(x, y);
+        await sleep(700);
+        cap.presses.push({ point: [Math.round(x), Math.round(y)], section: s.id, holdMs: 1300, shots: [key + '_before.png', key + '_hold.png'], t: null });
+        if (await backHome(await call('toggleState', 'body'))) break;
+      }
+      // buttons: :active / pressed states (released outside the button so that no click fires)
+      const items = ((await call('listInteractive', 30)) || []).filter((it) => it.tag !== 'a').slice(0, 6);
+      for (const it of items) {
+        try {
+          const docH = await call('docHeight');
+          await call('scrollToY', Math.max(0, Math.min(docH - vh, it.rect.y - vh / 2)), 200);
+          const r = await call('rectOf', it.nid);
+          if (!r || r.y < 0 || r.y + r.h > vh) continue;
+          const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+          await driver.mouseMove(cx, cy);
+          await sleep(500);
+          const before = await call('styleSnapshot', it.nid);
+          await driver.mouseDown(cx, cy);
+          await sleep(700);
+          const after = await call('styleSnapshot', it.nid);
+          await driver.mouseMove(4, 4);
+          await driver.mouseUp(4, 4);
+          await sleep(400);
+          const diff = diffStyles(before, after);
+          if (diff.length) cap.presses.push({ target: { selector: it.selector, nid: it.nid, rect: it.rect }, diff, holdMs: 700 });
+          if (await backHome(await call('toggleState', 'body'))) break;
+        } catch (e) {
+          log.push({ step: 'press ' + it.selector, level: 'warn', error: String(e.message || e) });
+        }
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------- 7c. menus, burgers, accordions, tabs
+  cap.toggles = [];
+  if (driver.capabilities.trustedInput) {
+    progress(8, 'toggle', 75);
+    await step('toggles', 90000, async () => {
+      await call('mark', 'toggle');
+      const list = (await call('listToggles', 8)) || [];
+      for (const tg of list) {
+        try {
+          if (!tg.fixed) {
+            const docH = await call('docHeight');
+            await call('scrollToY', Math.max(0, Math.min(docH - vh, tg.rect.y - vh / 2)), 250);
+          } else await call('scrollToY', 0, 250);
+          const r = await call('rectOf', tg.nid);
+          if (!r || r.y < 0 || r.y + r.h > vh || r.w < 2) continue;
+          const before = await call('toggleState', tg.nid);
+          const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+          const key = `reference/${main}/toggle/t${String(cap.toggles.length + 1).padStart(2, '0')}`;
+          await shoot(key + '_closed.png');
+          await driver.mouseMove(cx, cy);
+          await sleep(200);
+          const t0 = await call('mark', 'toggle-' + tg.kind);
+          await driver.mouseClick(cx, cy);
+          const settle = await call('waitStable', 300, 3000).catch(() => null);
+          await sleep(300);
+          const after = await call('toggleState', tg.nid);
+          if (await backHome(after)) continue;
+          await shoot(key + '_open.png');
+          const changed = before.expanded !== after.expanded || before.selected !== after.selected || before.open !== after.open || before.htmlClass !== after.htmlClass || before.bodyClass !== after.bodyClass || before.overlays.length !== after.overlays.length || JSON.stringify(before.controls) !== JSON.stringify(after.controls);
+          cap.toggles.push({
+            target: { selector: tg.selector, nid: tg.nid },
+            kind: tg.kind,
+            label: tg.label,
+            controls: after.controls || before.controls,
+            expanded: [before.expanded, after.expanded],
+            changed,
+            coversViewport: after.overlays.length > before.overlays.length,
+            opened: { htmlClass: after.htmlClass !== before.htmlClass ? after.htmlClass : undefined, bodyOverflow: after.bodyOverflow !== before.bodyOverflow ? after.bodyOverflow : undefined, newOverlays: after.overlays.filter((o) => !before.overlays.includes(o)) },
+            settleMs: settle ? settle.ms : null,
+            shots: [key + '_closed.png', key + '_open.png'],
+            t: t0,
+          });
+          // restore the initial state
+          if (changed && tg.kind !== 'tab') {
+            const again = await call('rectOf', tg.nid);
+            if (again && again.w > 0 && again.y >= 0 && again.y < vh) await driver.mouseClick(again.x + again.w / 2, again.y + again.h / 2);
+            else if (driver.key) await driver.key('Escape');
+            await sleep(900);
+            const st = await call('toggleState', tg.nid);
+            if (st.overlays.length > before.overlays.length && driver.key) {
+              await driver.key('Escape');
+              await sleep(700);
+            }
+          }
+        } catch (e) {
+          log.push({ step: 'toggle ' + tg.selector, level: 'warn', error: String(e.message || e) });
+        }
+      }
+      // tabs: go back to the first tab of each group
+      const firstTab = list.find((t) => t.kind === 'tab');
+      if (firstTab) {
+        const r = await call('rectOf', firstTab.nid).catch(() => null);
+        if (r && r.y >= 0 && r.y < vh) await driver.mouseClick(r.x + r.w / 2, r.y + r.h / 2);
+      }
+    });
+  }
+
   // ---------------------------------------------------------------- 8. breakpoints
   const others = o.breakpoints.slice(1);
   if (others.length && driver.capabilities.emulation) {
@@ -382,6 +521,7 @@ async function finalize(driver, cap, o, call, step, progress, log) {
   });
   cap.webgl = (await step('webgl', 10000, () => call('glState'))) || {};
   cap.three = (await step('three', 10000, () => call('threeState'))) || {};
+  cap.lottie = (await step('lottie', 5000, () => call('lottieState'))) || [];
   cap.assets = (await step('assets', 15000, () => call('getAssets'))) || {};
   cap.perf = (await step('perf', 5000, () => call('getPerf'))) || {};
   cap.errors = cap.motion.errors || [];

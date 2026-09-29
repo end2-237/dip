@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CdpDriver } from '../extension/lib/cdp-driver.js';
-import { measureTrack } from '../extension/lib/analyzer.js';
+import { measureTrack, analyze3DMotion } from '../extension/lib/analyzer.js';
 import { launchBrowser } from './lib/browser.js';
 import { curveRms, compareInPage, hexToLab, deltaE2000 } from './lib/verify-core.js';
 
@@ -173,9 +173,19 @@ async function main() {
     // motion (main breakpoint)
     const main = mainBp;
     for (const e of effects) {
-      if (!e.curve && e.metric !== 'hover-style' && e.metric !== 'loop-speed') continue;
+      if (!e.curve && !['hover-style', 'loop-speed', 'press-style', 'toggle'].includes(e.metric) && !String(e.metric).startsWith('3d-')) continue;
       await load(main);
       const out = (res.effects[e.id] = { section: e.section, trigger: e.trigger, notes: [] });
+      if (String(e.metric).startsWith('3d-')) {
+        try {
+          Object.assign(out, await verify3D(driver, page, e, packDir));
+        } catch (err) {
+          out.score = 0;
+          out.notes.push('3D verification failed: ' + err.message);
+        }
+        if (out.score < 0.9) issue(e.id, out.notes[0] || `3D ${out.score}`, ((1 - out.score) * cfg.weights.motion) / Math.max(1, effects.length));
+        continue;
+      }
       const present = await driver.call('rectOf', e.anchor).catch(() => null);
       if (!present) {
         out.score = 0;
@@ -185,6 +195,8 @@ async function main() {
       }
       try {
         if (e.metric === 'hover-style') Object.assign(out, await verifyHover(driver, e));
+        else if (e.metric === 'press-style') Object.assign(out, await verifyPress(driver, e));
+        else if (e.metric === 'toggle') Object.assign(out, await verifyToggle(driver, e));
         else if (e.metric === 'loop-speed') Object.assign(out, await verifyLoop(driver, e));
         else if (e.trigger === 'scroll-scrub') Object.assign(out, await verifyScrub(driver, e, packDir));
         else Object.assign(out, await verifyTimed(driver, page, e, packDir));
@@ -347,6 +359,128 @@ async function verifyLoop(driver, e) {
   const notes = err > 0.1 ? [`loop speed ${m.loop.speedPxPerS}px/s, expected ${e.loop.speedPxPerS}px/s`] : [];
   if (Math.sign(m.loop.speedPxPerS) !== Math.sign(e.loop.speedPxPerS)) notes.push('loop runs in the opposite direction');
   return { score: r2(clamp01(1 - Math.max(0, err - 0.05) / 0.5) * (notes.some((n) => n.includes('opposite')) ? 0.5 : 1)), measured: m.loop, notes };
+}
+
+// ---- 3D: the probes read the clone's Three.js scene exactly like the original's (camera / named objects)
+function pick3DTrack(tracks, e) {
+  const t3 = e.three || {};
+  if (t3.object === 'camera') return tracks.find((t) => t.kind === 'camera');
+  return tracks.find((t) => t.label === t3.object) || tracks.find((t) => t.kind === t3.kind && t.kind !== 'camera');
+}
+async function verify3D(driver, page, e, packDir) {
+  const ping = await driver.call('ping');
+  const t3 = e.three || {};
+  if (e.metric === '3d-scroll-path') {
+    const end = (e.scroll && e.scroll.endPx != null ? e.scroll.endPx : ping.docHeight) + 200;
+    for (let y = 0; y <= end; y += 80) await driver.call('scrollToY', y, 30);
+    await sleep(400);
+  } else if (e.metric === '3d-mouse') {
+    // dwell on a grid of points: lerped followers need time to settle for a clean pointer correlation
+    const pts = [];
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 4; col++) pts.push([((row % 2 ? 3 - col : col) + 0.5) / 4, (row + 0.5) / 3]);
+    for (const [fx, fy] of pts) {
+      await driver.mouseMove(fx * ping.vw, fy * ping.vh);
+      await sleep(550);
+    }
+  } else if (e.metric === '3d-loop') {
+    await sleep(4500);
+  } else {
+    await driver.reload();
+    await sleep(Math.min(20000, (e.startMs || 0) + (e.duration || 1) * 1000 + 1500));
+  }
+  const tracks = (await driver.call('threeMotion').catch(() => [])) || [];
+  if (!tracks.length) return { score: 0, notes: ['no Three.js motion measured: render with three.js WebGLRenderer (read through __THREE_DEVTOOLS__) and animate ' + (t3.object === 'camera' ? 'the camera' : `an object named "${t3.object}"`)] };
+  const tk = pick3DTrack(tracks, e);
+  if (!tk) return { score: 0.2, notes: [`no moving 3D ${t3.object === 'camera' ? 'camera' : `object "${t3.object}"`} found (moving: ${tracks.map((t) => t.label).slice(0, 6).join(', ')})`] };
+  const got = analyze3DMotion({ three: { motion: [tk] }, ping }, { marks: [], vw: ping.vw, manualTrigger: () => 'click' })[0];
+  if (!got) return { score: 0.2, notes: ['the 3D ' + t3.object + ' does not move enough to be measured'] };
+  const notes = [];
+  const want = { '3d-scroll-path': 'scroll-scrub', '3d-loop': 'time-loop', '3d-mouse': 'mouse-move' }[e.metric];
+  if (want && got.trigger !== want) return { score: 0.3, notes: [`3D ${t3.object} moves on "${got.trigger}", expected "${want}"`] };
+  let score = 1;
+  if (e.metric === '3d-loop' && t3.loop && got.animation.loop) {
+    const ch = Object.keys(t3.loop.perSecond || {})[0];
+    const a = (t3.loop.perSecond || {})[ch], b = (got.animation.loop.perSecond || {})[ch];
+    if (a && b != null) {
+      const err = Math.abs(Math.abs(b) - Math.abs(a)) / Math.abs(a);
+      score = clamp01(1 - Math.max(0, err - 0.1) / 0.5);
+      if (err > 0.1) notes.push(`${t3.object} ${ch} speed ${b}/s, expected ${a}/s`);
+    }
+  } else if (e.metric === '3d-mouse' && t3.mouse && got.animation.mouse) {
+    let n = 0, ok = 0;
+    for (const [ch, g] of Object.entries(t3.mouse.gains || {})) {
+      const h = (got.animation.mouse.gains || {})[ch];
+      n++;
+      if (h && Math.sign(h.perPointerX) === Math.sign(g.perPointerX) && Math.sign(h.perPointerY) === Math.sign(g.perPointerY)) ok++;
+      else notes.push(`${t3.object} ${ch}: pointer response ${JSON.stringify(h || null)}, expected ${JSON.stringify(g)}`);
+    }
+    score = n ? ok / n : 1;
+  } else if (e.curve) {
+    const ref = readCurve(packDir, e);
+    const rms = ref && got.curve ? curveRms(ref, got.curve) : null;
+    const thr = e.threshold || 0.05;
+    if (rms != null) {
+      score = clamp01(1 - Math.max(0, rms - thr / 2) / (thr * 4));
+      if (rms > thr) notes.push(`${t3.object} path RMS ${r2(rms)} > ${thr} (ease ≈ ${got.animation.ease})`);
+    }
+    if (e.metric === '3d-scroll-path' && e.scroll && got.animation.scroll) {
+      const span = (e.scroll.endPx - e.scroll.startPx) || 1;
+      const dStart = Math.abs(got.animation.scroll.startPx - e.scroll.startPx) / span, dEnd = Math.abs(got.animation.scroll.endPx - e.scroll.endPx) / span;
+      if (dStart > 0.1 || dEnd > 0.1) notes.push(`${t3.object} moves between ${got.animation.scroll.startPx}px and ${got.animation.scroll.endPx}px of scroll, expected ${e.scroll.startPx}–${e.scroll.endPx}px`);
+      score = score * 0.75 + 0.25 * clamp01(1 - (dStart + dEnd) / 0.6);
+    }
+    if (e.duration && got.animation.duration) {
+      const err = Math.abs(got.animation.duration - e.duration) / e.duration;
+      if (err > 0.1) notes.push(`${t3.object} duration ${got.animation.duration}s, expected ${e.duration}s`);
+      score = score * 0.8 + 0.2 * clamp01(1 - Math.max(0, err - 0.1) / 0.3);
+    }
+  }
+  return { score: r2(score), notes };
+}
+
+async function verifyPress(driver, e) {
+  const r = await driver.call('rectOf', e.anchor);
+  const ping = await driver.call('ping');
+  await driver.call('scrollToY', Math.max(0, r.abs.y - ping.vh / 2), 200);
+  const rr = await driver.call('rectOf', e.anchor);
+  const cx = rr.x + rr.w / 2, cy = rr.y + rr.h / 2;
+  await driver.mouseMove(cx, cy);
+  await sleep(400);
+  const before = await driver.call('styleSnapshot', e.anchor);
+  await driver.mouseDown(cx, cy);
+  await sleep(700);
+  const after = await driver.call('styleSnapshot', e.anchor);
+  await driver.mouseMove(4, 4);
+  await driver.mouseUp(4, 4);
+  const changed = new Map();
+  for (const b of before.styles) {
+    const a = after.styles.find((x) => x.sel === b.sel);
+    if (a) for (const k of Object.keys(b)) if (k !== 'sel' && k !== 'nid' && a[k] !== b[k]) changed.set(k, a[k]);
+  }
+  const want = new Map((e.pressChanges || []).map((c) => [c.prop, c.after]));
+  if (!want.size) return { score: 1, notes: [] };
+  let hit = 0;
+  const notes = [];
+  for (const [prop, val] of want) {
+    if (changed.has(prop)) hit++;
+    else notes.push(`press: ${prop} does not change (expected → ${val})`);
+  }
+  return { score: r2(hit / want.size), notes };
+}
+
+async function verifyToggle(driver, e) {
+  const ping = await driver.call('ping');
+  const r0 = await driver.call('rectOf', e.anchor);
+  if (r0.abs.y > ping.vh) await driver.call('scrollToY', Math.max(0, r0.abs.y - ping.vh / 2), 200);
+  const r = await driver.call('rectOf', e.anchor);
+  const before = await driver.call('toggleState', e.anchor);
+  await driver.mouseClick(r.x + r.w / 2, r.y + r.h / 2);
+  await sleep(1500);
+  const after = await driver.call('toggleState', e.anchor);
+  const changed = before.expanded !== after.expanded || before.selected !== after.selected || before.open !== after.open || before.htmlClass !== after.htmlClass || before.bodyClass !== after.bodyClass || before.overlays.length !== after.overlays.length || JSON.stringify(before.controls) !== JSON.stringify(after.controls);
+  const notes = changed ? [] : [`clicking ${e.anchor} (${(e.toggle || {}).kind}) changes nothing: it should open / switch its content`];
+  if (changed && (e.toggle || {}).kind !== 'tab') await driver.key('Escape').catch(() => {});
+  return { score: changed ? 1 : 0.2, notes };
 }
 
 async function verifyHover(driver, e) {

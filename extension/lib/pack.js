@@ -1,6 +1,7 @@
 // Reproduction Pack writer (spec ch. 10). Produces a list of {path, data} files, then a zip.
 import { zip, base64ToBytes } from './zip.js';
 import { EFFECT_TYPES } from './taxonomy.js';
+import { COMMANDS } from './commands.js';
 
 export const SCHEMA_VERSION = 1;
 export const DIP_VERSION = '0.1.0';
@@ -192,6 +193,36 @@ function recipe(e, analysis) {
       lines.push('```');
       if (e.trigger === 'scroll-enter') lines.push(`Trigger it when the element enters the viewport (IntersectionObserver or ScrollTrigger \`start: 'top 85%'\` [estimated]).`);
     }
+  } else if (e.source === 'read:three') {
+    const t3 = e.three || {};
+    const who = t3.object === 'camera' ? 'the camera' : `the object named \`${t3.object}\` (set \`object.name = '${t3.object}'\` so dip-verify can match it)`;
+    if (e.trigger === 'scroll-scrub') {
+      lines.push(`${n()}. Drive ${who} with the scroll between **${a.scroll.startPx}px** and **${a.scroll.endPx}px** (page scroll at 1440): channels ${a.channels.map((c) => '`' + c + '`').join(', ')}, progress ease ≈ \`${a.ease}\`. Keyframes (scene units / radians):`);
+      lines.push('');
+      lines.push('```json');
+      lines.push(JSON.stringify(a.keyframes, null, 0).replace(/},{/g, '},\n{'));
+      lines.push('```');
+      lines.push('');
+      lines.push(`   Implementation: a GSAP timeline with ScrollTrigger (\`scrub: true\`) tweening ${t3.object === 'camera' ? '`camera.position` / `camera.rotation` (and `camera.fov` + `updateProjectionMatrix()`)' : 'the object transform'}, or interpolate the keyframes yourself from the scroll progress.`);
+    } else if (e.trigger === 'mouse-move') {
+      lines.push(`${n()}. Make ${who} follow the pointer (pointer normalised to -1..1 across the viewport). Gains per channel: ${fmt(a.mouse && a.mouse.gains)}. Smooth it (lerp ≈ 0.05–0.1 per frame [estimated]). Ranges: ${fmt(a.range)}.`);
+    } else if (e.trigger === 'time-loop') {
+      lines.push(`${n()}. Animate ${who} continuously: speed per second ${fmt(a.loop && a.loop.perSecond)} (${a.loop && a.loop.note}). Ranges: ${fmt(a.range)}.`);
+    } else {
+      lines.push(`${n()}. Animate ${who} on \`${e.trigger}\`: from ${fmt(a.from)} to ${fmt(a.to)} in **${a.duration}s**, ease \`${a.ease}\`.`);
+    }
+  } else if (e.source === 'measured:press') {
+    lines.push(`${n()}. While the pointer is pressed (held ${a.holdMs}ms), apply (before → pressed):`);
+    lines.push('');
+    for (const c of (a.changes || []).slice(0, 12)) lines.push(`   - \`${c.sel}\` **${c.prop}**: \`${c.before}\` → \`${c.after}\``);
+    for (const m of (a.motion || []).slice(0, 6)) lines.push(`   Motion: ${(m.targets || []).map((t) => '\`' + t + '\`').join(', ')} ${m.duration != null ? m.duration + 's' : ''} ${m.ease || ''} ${m.values ? fmt(m.values) : ''}`);
+    lines.push(`   Use \`:active\` or pointerdown / pointerup listeners; release restores the rest state.`);
+  } else if (e.source === 'measured:toggle') {
+    lines.push(`${n()}. Clicking \`${(e.targets[0] || {}).selector}\` (${a.kind}${a.label ? ` "${a.label}"` : ''}) opens / switches content${a.controls ? ` \`${a.controls.selector}\`` : ''}; it settles in ≈ ${a.settleMs}ms. Compare the closed / open references: ${(e.shots || []).map((s) => '`' + s + '`').join(', ')}.`);
+    if (a.opened && a.opened.newOverlays && a.opened.newOverlays.length) lines.push(`   A full-viewport layer appears: ${a.opened.newOverlays.map((o) => '`' + o + '`').join(', ')}${a.opened.bodyOverflow ? ` and the page scroll is locked (body overflow: ${a.opened.bodyOverflow})` : ''}.`);
+    if (a.styleChanges && a.styleChanges.length) for (const c of a.styleChanges.slice(0, 10)) lines.push(`   - \`${c.sel}\` **${c.prop}**: \`${c.before}\` → \`${c.after}\``);
+    for (const m of (a.motion || []).slice(0, 8)) lines.push(`   Motion while opening: ${(m.targets || []).map((t) => '\`' + t + '\`').join(', ')} — ${Array.isArray(m.properties) ? m.properties.join(', ') : m.properties || ''} ${m.duration != null ? m.duration + 's' : ''} ${m.ease ? '\`' + m.ease + '\`' : ''}${m.delay ? ' delay ' + m.delay + 's' : ''}`);
+    lines.push(`   Keep \`aria-expanded\` / \`aria-selected\` in sync, close on Escape, trap focus in overlays.`);
   } else if (e.source === 'measured:hover') {
     lines.push(`${n()}. On hover, apply these computed-style changes (before → after):`);
     lines.push('');
@@ -301,7 +332,7 @@ function shaderOutline(c) {
   return `- ${lines} lines of GLSL\n` + (feats.length ? feats.map((f) => '- ' + f).join('\n') : '- (no known pattern detected)');
 }
 
-function sceneMd(s, cards) {
+function sceneMd(s, cards, effects) {
   const o = ['# Three.js scene', ''];
   o.push(`- Three.js r${s.revision || '?'} · ${s.scenes} scene(s) · ${s.objects} objects · **${s.meshes} meshes** (max ${s.maxVertices} vertices)`);
   const r = (s.renderers || [])[0];
@@ -316,6 +347,26 @@ function sceneMd(s, cards) {
   o.push('');
   for (const l of s.lights) o.push(`- ${l.type} ${l.color || ''} intensity ${l.intensity} at ${JSON.stringify(l.position)}`);
   if (!s.lights.length) o.push('- none');
+  o.push('');
+  o.push('## Motion (measured over time)');
+  o.push('');
+  const fx3 = (effects || []).filter((e) => e.source === 'read:three');
+  for (const e of fx3) o.push(`- [\`${e.id}\`](../motion/effects/${e.id}.md) — ${e.three.object}: ${e.effect_type}, ${e.trigger} (${e.three.channels.join(', ')})`);
+  if (!fx3.length) o.push('- no camera / object motion recorded');
+  if ((s.animationClips || []).length) {
+    o.push('');
+    o.push('## Animation clips (glTF / AnimationMixer)');
+    o.push('');
+    for (const a of s.animationClips) o.push(`- ${a.object}: ${a.clips.map((c) => `${c.name || 'clip'} ${c.duration}s (${c.tracks} tracks: ${(c.targets || []).join(', ')})`).join('; ')}`);
+  }
+  if ((s.morphTargets || []).length || s.skinnedMeshes) {
+    o.push('');
+    o.push(`- Skinned meshes: ${s.skinnedMeshes || 0}; morph targets: ${(s.morphTargets || []).map((m) => `${m.object} (${m.count}${m.names ? ': ' + m.names.join(', ') : ''})`).join('; ') || 'none'}`);
+  }
+  o.push('');
+  o.push('## Post-processing');
+  o.push('');
+  o.push((s.postprocessing || []).length ? s.postprocessing.map((p) => '- ' + p).join('\n') : '- none detected');
   o.push('');
   o.push('## Custom shaders');
   o.push('');
@@ -440,6 +491,7 @@ function buildPlanMd(analysis, effects, stack) {
   o.push('');
   o.push('Follow the steps in order. Each step ends with a verification command.');
   o.push('');
+  step('Design DNA', 'Before building, read `.claude/commands/dip-dna.md` and follow it: write `DESIGN_DNA.md` and `dna.json` at the pack root (art direction, composition, typography, colour, 3D, motion personality, copy tone, signature moments). Every later step must stay consistent with it.', '`DESIGN_DNA.md` and `dna.json` exist and only cite measured values.');
   step('Project setup', `Create a ${stack.framework} project. Install: ${stack.libraries.map((l) => '`' + l.package + '@' + l.version + '`').join(', ') || 'no extra library'}. Add \`NOTES.md\`.`, 'the dev server runs and shows an empty page.');
   step('Design tokens & fonts', 'Copy `design/tokens.css` into the global stylesheet. Load the fonts listed in `design/typography.md` (study mode: files in `assets/files/`; otherwise free equivalents). Implement the type scale with the clamp() formulas.', 'body text renders with the right family, size and colour; `npx dip-verify --pack . --tokens` ≥ 0.95.');
   step('Global layout & grid', 'Implement the grid of `design/grid.md` (margins, columns, gutters per breakpoint) and the page wrapper.', 'container widths match at 1440/1024/390.');
@@ -606,6 +658,8 @@ export async function buildPackFiles(cap, analysis, opts) {
   };
   add('manifest.json', J(manifest));
   add('AGENT_RULES.md', agentRules());
+  // Claude Code commands (run on the user's Claude subscription): /dip-dna, /dip-transform, /dip-create
+  for (const [name, body] of Object.entries(COMMANDS)) add('.claude/commands/' + name, body);
   add('SPEC.md', specMd(cap, analysis, effects, stack, mode, refs));
   add('BUILD_PLAN.md', buildPlanMd(analysis, effects, stack));
 
@@ -639,7 +693,7 @@ export async function buildPackFiles(cap, analysis, opts) {
     add(`webgl/${w.id}-uniforms.json`, J(w.uniformSamples));
     if (mode === 'study') add(`webgl/${w.id}.glsl`, `// ${w.id} — captured for study only. Do not ship.${w.material ? `\n// Three.js ${w.material}: the prefix Three.js injects (defines, built-in uniforms/attributes) is stripped.` : ''}\n// ===== vertex =====\n${w.userVertex || w.vertex}\n\n// ===== fragment =====\n${w.userFragment || w.fragment}\n`);
   }
-  if (analysis.webgl.sceneSummary) add('webgl/three-scene.md', sceneMd(analysis.webgl.sceneSummary, analysis.webgl.cards));
+  if (analysis.webgl.sceneSummary) add('webgl/three-scene.md', sceneMd(analysis.webgl.sceneSummary, analysis.webgl.cards, effects));
   if (analysis.webgl.three) add('webgl/three-scene.json', J(mode === 'share' ? { ...analysis.webgl.three, scenes: analysis.webgl.three.scenes.map((s) => ({ ...s, objects: s.objects.map((o) => ({ ...o, materials: o.materials && o.materials.map(({ vertexShader, fragmentShader, ...m }) => m) })) })) } : analysis.webgl.three));
 
   // assets
@@ -679,7 +733,7 @@ export async function buildPackFiles(cap, analysis, opts) {
       top: s.top,
     })),
     effects: effects
-      .filter((e) => e.curve || e.trigger === 'hover' || e.trigger === 'time-loop')
+      .filter((e) => e.curve || e.trigger === 'hover' || e.trigger === 'time-loop' || e.source === 'measured:press' || e.source === 'measured:toggle' || e.source === 'read:three')
       .map((e) => ({
         id: e.id,
         section: e.section,
@@ -688,7 +742,10 @@ export async function buildPackFiles(cap, analysis, opts) {
         effectType: e.effect_type,
         startMs: e.t != null ? Math.round(e.t) : null,
         startScroll: e.startScroll != null ? e.startScroll : null,
-        metric: e.trigger === 'scroll-scrub' ? 'scroll-curve-rms' : e.trigger === 'hover' ? 'hover-style' : e.trigger === 'time-loop' ? 'loop-speed' : 'motion-rms',
+        metric: e.source === 'read:three' ? (e.trigger === 'scroll-scrub' ? '3d-scroll-path' : e.trigger === 'time-loop' ? '3d-loop' : e.trigger === 'mouse-move' ? '3d-mouse' : '3d-motion') : e.source === 'measured:press' ? 'press-style' : e.source === 'measured:toggle' ? 'toggle' : e.trigger === 'scroll-scrub' ? 'scroll-curve-rms' : e.trigger === 'hover' ? 'hover-style' : e.trigger === 'time-loop' ? 'loop-speed' : 'motion-rms',
+        three: e.source === 'read:three' ? { object: e.three.object, kind: e.three.kind, channels: e.three.channels, mainChannel: e.animation.mainChannel, loop: e.animation.loop, mouse: e.animation.mouse } : undefined,
+        pressChanges: e.source === 'measured:press' ? (e.animation.changes || []).slice(0, 12) : undefined,
+        toggle: e.source === 'measured:toggle' ? { kind: e.animation.kind, label: e.animation.label } : undefined,
         threshold: e.confidence < 0.6 ? 0.12 : 0.05,
         duration: e.animation && typeof e.animation.duration === 'number' ? e.animation.duration : null,
         delay: e.animation && e.animation.delay ? e.animation.delay : 0,

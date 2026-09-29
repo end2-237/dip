@@ -449,7 +449,86 @@
   trapGlobal('ScrollTrigger', instrumentST);
 
   // ================================================================ Three.js devtools hook
-  const three = { scenes: new Set(), renderers: new Set(), lastCamera: null, cameraOf: new WeakMap() };
+  const three = { scenes: new Set(), renderers: new Set(), lastCamera: null, cameraOf: new WeakMap(), tracks: new Map(), lastSample: 0, objSigs: new WeakMap(), ids: new WeakMap(), idSeq: 0 };
+
+  // ---- 3D motion over time: camera + objects sampled at ≤15 Hz from the render loop (only when they change)
+  function threeTrack(key, label, kind) {
+    let tk = three.tracks.get(key);
+    if (!tk) {
+      if (three.tracks.size >= 60) return null;
+      tk = { key, label, kind, t: [], s: [], mx: [], my: [], px: [], py: [], pz: [], rx: [], ry: [], rz: [], sx: [], sy: [], sz: [], fov: [], last: '' };
+      three.tracks.set(key, tk);
+    }
+    return tk;
+  }
+  function threeSample(tk, o, t, s) {
+    const p = o.position, r = o.rotation, sc = o.scale;
+    if (!p || !r || !sc) return;
+    const q = (v) => Math.round(v * 10000) / 10000;
+    const vals = [q(p.x), q(p.y), q(p.z), q(r.x), q(r.y), q(r.z), q(sc.x), q(sc.y), q(sc.z), o.isPerspectiveCamera ? q(o.fov) : null];
+    const sig = vals.join(',');
+    if (sig === tk.last || tk.t.length >= 2500) return;
+    tk.last = sig;
+    tk.t.push(Math.round(t));
+    tk.s.push(s);
+    tk.mx.push(mouse.x);
+    tk.my.push(mouse.y);
+    tk.px.push(vals[0]);
+    tk.py.push(vals[1]);
+    tk.pz.push(vals[2]);
+    tk.rx.push(vals[3]);
+    tk.ry.push(vals[4]);
+    tk.rz.push(vals[5]);
+    tk.sx.push(vals[6]);
+    tk.sy.push(vals[7]);
+    tk.sz.push(vals[8]);
+    tk.fov.push(vals[9]);
+  }
+  function threeId(o) {
+    let id = three.ids.get(o);
+    if (!id) {
+      id = 'o' + ++three.idSeq;
+      three.ids.set(o, id);
+    }
+    return id;
+  }
+  function sampleThree(scene, camera) {
+    const tNow = now();
+    if (tNow - three.lastSample < 66) return;
+    three.lastSample = tNow;
+    const t = rel(), s = scrollPos();
+    if (camera) {
+      const tk = threeTrack('camera', camera.name || camera.type || 'camera', 'camera');
+      if (tk) threeSample(tk, camera, t, s);
+    }
+    // objects: top-level children and named / mesh objects whose transform changed
+    let n = 0;
+    scene.traverse((o) => {
+      if (++n > 400 || o === camera || o.isScene || o.isLight) return;
+      const topLevel = o.parent === scene;
+      if (!topLevel && !o.name && !o.isMesh) return;
+      const p = o.position, r = o.rotation, sc = o.scale;
+      if (!p) return;
+      const sig = p.x + ',' + p.y + ',' + p.z + ',' + r.x + ',' + r.y + ',' + r.z + ',' + sc.x + ',' + sc.y + ',' + sc.z;
+      const prev = three.objSigs.get(o);
+      three.objSigs.set(o, sig);
+      const key = threeId(o);
+      if (prev === undefined || (prev === sig && !three.tracks.has(key))) return;
+      const tk = threeTrack(key, o.name || o.type, o.isMesh ? 'mesh' : o.type);
+      if (!tk) return;
+      if (!tk.t.length && prev) {
+        // state before the first change, so the motion starts from its real origin
+        const v = prev.split(',').map(Number);
+        tk.t.push(Math.round(t - 66));
+        tk.s.push(s);
+        tk.mx.push(mouse.x);
+        tk.my.push(mouse.y);
+        ['px', 'py', 'pz', 'rx', 'ry', 'rz', 'sx', 'sy', 'sz'].forEach((k, i) => tk[k].push(Math.round(v[i] * 10000) / 10000));
+        tk.fov.push(null);
+      }
+      threeSample(tk, o, t, s);
+    });
+  }
   (function threeHook() {
     try {
       if (W.__THREE_DEVTOOLS__) return;
@@ -468,6 +547,12 @@
                 if (scene && scene.isScene) {
                   three.scenes.add(scene);
                   if (camera) three.cameraOf.set(scene, camera);
+                  // sample only the main scene (full-screen post passes render tiny scenes)
+                  try {
+                    if (rec.on && scene.children && scene.children.length > 2) sampleThree(scene, camera);
+                  } catch (err) {
+                    /* never break rendering */
+                  }
                 }
                 return orig.apply(this, arguments);
               }
@@ -855,9 +940,12 @@
             // JS animation libs write inline styles: start tracking at the very first write.
             if (rec.on && !rec.tracked.has(nids.get(el)) && el.nodeType === 1) {
               const st = (el.getAttribute('style') || '') + '|' + (m.oldValue || '');
-              if (/transform|translate|scale|rotate|opacity|clip-path|filter/.test(st)) {
+              if (/transform|translate|scale|rotate|opacity|clip-path|filter|color|background|radius|letter-spacing|stroke|font-variation|mask/.test(st)) {
                 const tk = track(el);
-                if (tk) sampleTrack(tk, el, N.getCS(el), rel(), scrollPos());
+                if (tk) {
+                  if (/color|background|radius|letter-spacing|stroke|font-variation|mask/.test(st)) tk.extraOn = true;
+                  sampleTrack(tk, el, N.getCS(el), rel(), scrollPos());
+                }
               }
             }
             continue;
@@ -906,17 +994,30 @@
       const nodes = [el, ...Array.from(el.querySelectorAll('*')).slice(0, 40)];
       for (const n of nodes) {
         if (priority.has(n)) {
-          priority.get(n).left = 90;
+          priority.get(n).left = 60;
           continue;
         }
-        priority.set(n, { left: 90, sig: rec.sigs.get(n) });
+        priority.set(n, { left: 60, sig: watchSig(N.getCS(n)) });
       }
     } catch (e) {
       /* ignore */
     }
   }
-  function styleSig(cs) {
+  // beyond transform / opacity / clip / filter: colours, radii, letter-spacing, variable-font axes, SVG stroke drawing
+  const EXTRA_PROPS = ['color', 'backgroundColor', 'borderTopLeftRadius', 'letterSpacing', 'fontVariationSettings', 'strokeDashoffset', 'backgroundPosition', 'maskPosition'];
+  // base signature (cheap, used by the background scan of every element) …
+  function baseSig(cs) {
     return cs.transform + '|' + cs.opacity + '|' + cs.clipPath + '|' + cs.filter;
+  }
+  // class-change watch: base + the colour properties most transitions touch (cheaper than the full list)
+  function watchSig(cs) {
+    return baseSig(cs) + '|' + cs.color + '|' + cs.backgroundColor;
+  }
+  // … full signature (tracked elements with colour / radius / typography animations)
+  function styleSig(cs) {
+    let s = baseSig(cs);
+    for (const p of EXTRA_PROPS) s += '|' + cs[p];
+    return s;
   }
   function decompose(tr) {
     if (!tr || tr === 'none') return [0, 0, 0, 1, 1, 0];
@@ -985,12 +1086,14 @@
       lastSig: null,
       lastClip: null,
       lastFilter: null,
+      extra: [], // [sampleIndex, prop, value]
+      lastExtra: {},
     };
     rec.tracked.set(id, t);
     return t;
   }
   function sampleTrack(tk, el, cs, t, s) {
-    const sig = styleSig(cs);
+    const sig = tk.extraOn ? styleSig(cs) : baseSig(cs);
     let rect = null;
     if (tk.wantRect) {
       const b = el.getBoundingClientRect();
@@ -1021,6 +1124,13 @@
     if (cs.filter !== tk.lastFilter) {
       tk.filter.push([tk.t.length - 1, cs.filter]);
       tk.lastFilter = cs.filter;
+    }
+    if (tk.extraOn) for (const p of EXTRA_PROPS) {
+      const v = cs[p];
+      if (v !== tk.lastExtra[p]) {
+        if (tk.extra.length < 3000) tk.extra.push([tk.t.length - 1, p, v]);
+        tk.lastExtra[p] = v;
+      }
     }
   }
   // Push a synthetic "previous state" sample from a stored signature, just before the first real sample.
@@ -1069,17 +1179,20 @@
             continue;
           }
           const cs = N.getCS(el);
-          const sig = styleSig(cs);
+          const sig = watchSig(cs);
           if (p.sig === undefined) p.sig = sig;
           else if (p.sig !== sig) {
             const tk = track(el);
             if (tk) {
+              // read colours / radii every frame only if this transition changes them
+              const a0 = p.sig.split('|'), a1 = sig.split('|');
+              if (a0[4] !== a1[4] || a0[5] !== a1[5]) tk.extraOn = true;
               preSample(tk, p.sig, t, s);
               sampleTrack(tk, el, cs, t, s);
             }
             priority.delete(el);
           }
-          rec.sigs.set(el, sig);
+          rec.sigs.set(el, baseSig(cs));
         }
         // incremental scan for newly-changing elements
         const pool = rec.pool;
@@ -1089,7 +1202,7 @@
           const el = pool[rec.cursor++];
           if (!el || !el.isConnected) continue;
           const cs = N.getCS(el);
-          const sig = styleSig(cs);
+          const sig = baseSig(cs);
           const prev = rec.sigs.get(el);
           rec.sigs.set(el, sig);
           if (prev !== undefined && prev !== sig) {
@@ -1114,8 +1227,9 @@
     rec.overheadAvg = rec.overheadAvg * 0.95 + overhead * 0.05;
     if (rec.frames.length) rec.frames[rec.frames.length - 1][2] = Math.round(overhead * 100) / 100;
     // adaptive budget (spec: reduce sampling above 4ms overhead)
-    if (rec.overheadAvg > 4 && rec.chunk > 20) rec.chunk = Math.max(20, Math.floor(rec.chunk * 0.8));
-    else if (rec.overheadAvg < 2 && rec.chunk < 150) rec.chunk += 5;
+    // self-regulating background scan: keep the probe under ~0.7ms per frame (spec: < 5% frame overhead)
+    if (rec.overheadAvg > 0.7 && rec.chunk > 30) rec.chunk = Math.max(30, Math.floor(rec.chunk * 0.9));
+    else if (rec.overheadAvg < 0.45 && rec.chunk < 150) rec.chunk += 5;
     N.rAF(recorderFrame);
   }
   N.rAF(recorderFrame);
@@ -1885,6 +1999,77 @@
     }
     return true;
   }
+  // ---- toggles: menus / burgers / accordions / tabs (clicked by the scan, then restored)
+  function listToggles(max) {
+    const out = [];
+    try {
+      const sel = 'button, [role="button"], [aria-expanded], [aria-controls], summary, [role="tab"], [data-menu-toggle], [class*="burger" i], [class*="hamburger" i], [class*="menu-toggle" i], [class*="nav-toggle" i], [class*="menu-button" i], [class*="menu-btn" i]';
+      const seen = new Set();
+      for (const el of D.querySelectorAll(sel)) {
+        if (out.length >= (max || 8)) break;
+        if (seen.has(el)) continue;
+        seen.add(el);
+        const a = el.closest('a[href]');
+        if (a && !/^(#|javascript:)/.test(a.getAttribute('href') || '')) continue; // would navigate
+        if (el.closest('form') && (el.type === 'submit' || el.getAttribute('type') === 'submit')) continue;
+        const cs = N.getCS(el);
+        if (!visible(el, cs) || cs.pointerEvents === 'none') continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 8 || r.height < 8) continue;
+        const label = (el.getAttribute('aria-label') || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+        const cls = String(el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className || '');
+        let kind = 'toggle';
+        if (el.getAttribute('role') === 'tab') kind = 'tab';
+        else if (/menu|burger|hamburger|nav/i.test(label + ' ' + cls)) kind = 'menu';
+        else if (el.localName === 'summary' || (el.hasAttribute('aria-expanded') && el.hasAttribute('aria-controls'))) kind = 'accordion';
+        else if (!el.hasAttribute('aria-expanded') && !el.hasAttribute('aria-controls')) continue; // plain buttons: not a toggle
+        out.push({ nid: nid(el), selector: selector(el), kind, label, controls: el.getAttribute('aria-controls'), fixed: cs.position === 'fixed' || !!el.closest('header, nav'), rect: absRect(el) });
+      }
+      // menus first (most valuable), then accordions, then tabs
+      const order = { menu: 0, accordion: 1, toggle: 2, tab: 3 };
+      out.sort((a, b) => order[a.kind] - order[b.kind]);
+    } catch (e) {
+      journal.error('toggles', e);
+    }
+    return out;
+  }
+  function toggleState(nidOrSel) {
+    const el = (typeof nidOrSel === 'string' && nidOrSel.startsWith('n') && elByNid(nidOrSel)) || D.querySelector(nidOrSel);
+    const vw = W.innerWidth, vh = W.innerHeight;
+    const overlays = [];
+    for (const o of D.body.querySelectorAll('*')) {
+      const cs = N.getCS(o);
+      if (cs.position !== 'fixed' && cs.position !== 'absolute') continue;
+      if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.05) continue;
+      const r = o.getBoundingClientRect();
+      if (r.width >= vw * 0.6 && r.height >= vh * 0.6 && r.bottom > 0 && r.top < vh) overlays.push(selector(o));
+      if (overlays.length > 20) break;
+    }
+    let controls = null;
+    const cid = el && el.getAttribute('aria-controls');
+    const c = cid && D.getElementById(cid);
+    if (c) {
+      const cs = N.getCS(c);
+      const r = c.getBoundingClientRect();
+      controls = { selector: selector(c), visible: visible(c, cs), height: Math.round(r.height), opacity: cs.opacity, transform: cs.transform };
+    }
+    return {
+      url: location.href,
+      expanded: el ? el.getAttribute('aria-expanded') : null,
+      selected: el ? el.getAttribute('aria-selected') : null,
+      open: el && el.closest('details') ? el.closest('details').open : null,
+      htmlClass: D.documentElement.className.toString().slice(0, 300),
+      bodyClass: D.body.className.toString().slice(0, 300),
+      bodyOverflow: N.getCS(D.body).overflow,
+      overlays,
+      controls,
+    };
+  }
+  function isNeutralPoint(x, y) {
+    const el = D.elementFromPoint(x, y);
+    if (!el) return false;
+    return !el.closest('a, button, input, select, textarea, label, summary, [role="button"], [contenteditable], [draggable="true"]');
+  }
   function findCursorCandidates() {
     const out = [];
     try {
@@ -2308,12 +2493,37 @@
             if (obj.isInstancedMesh) o.instances = obj.count;
           }
           if (obj.isCamera) Object.assign(o, { fov: obj.fov, near: obj.near, far: obj.far });
+          if (obj.animations && obj.animations.length) o.clips = obj.animations.slice(0, 20).map((c) => ({ name: c.name, duration: r2(c.duration), tracks: c.tracks ? c.tracks.length : null, targets: c.tracks ? [...new Set(c.tracks.map((tr) => String(tr.name).split('.').pop()))].slice(0, 8) : null }));
+          if (obj.isSkinnedMesh) o.skinned = { bones: obj.skeleton && obj.skeleton.bones ? obj.skeleton.bones.length : null };
+          if (obj.morphTargetInfluences && obj.morphTargetInfluences.length) o.morphTargets = { count: obj.morphTargetInfluences.length, names: obj.morphTargetDictionary ? Object.keys(obj.morphTargetDictionary).slice(0, 12) : null };
+          const ud = obj.userData && Object.keys(obj.userData).length ? sanitize(obj.userData) : null;
+          if (ud) o.userData = ud;
           s.objects.push(o);
         });
         out.scenes.push(s);
       }
+      out.motion = [...three.tracks.values()].filter((tk) => tk.t.length > 2).map(({ last, ...tk }) => tk);
+      out.renderedScenes = three.scenes.size;
     } catch (e) {
       journal.error('three', e);
+    }
+    return out;
+  }
+
+  // ================================================================ Lottie (lottie-web registry)
+  function lottieState() {
+    const out = [];
+    try {
+      const L = W.lottie || W.bodymovin;
+      const list = L && L.getRegisteredAnimations ? L.getRegisteredAnimations() : [];
+      for (const a of list.slice(0, 20)) {
+        const d = a.animationData || {};
+        const el = a.wrapper || (a.renderer && a.renderer.animationItem && a.renderer.animationItem.wrapper);
+        out.push({ name: a.name || d.nm || null, selector: el ? selector(el) : null, fps: d.fr, frames: d.op != null && d.ip != null ? d.op - d.ip : a.totalFrames, duration: d.fr ? r2((d.op - d.ip) / d.fr) : null, size: [d.w, d.h], layers: (d.layers || []).length, loop: a.loop, autoplay: a.autoplay, renderer: a.renderer && a.renderer.rendererType, path: a.path || null });
+      }
+      for (const p of D.querySelectorAll('lottie-player, dotlottie-player, dotlottie-wc')) out.push({ selector: selector(p), src: p.getAttribute('src'), loop: p.hasAttribute('loop'), autoplay: p.hasAttribute('autoplay'), webComponent: p.localName });
+    } catch (e) {
+      journal.error('lottie', e);
     }
     return out;
   }
@@ -2462,7 +2672,11 @@
     const tracks = [];
     for (const tk of rec.tracked.values()) {
       if (tk.t.length < 2) continue;
-      const { el, lastSig, lastClip, lastFilter, wantRect, ...rest } = tk;
+      const { el, lastSig, lastClip, lastFilter, lastExtra, wantRect, ...rest } = tk;
+      // keep only extra properties that really changed during the capture
+      const byProp = {};
+      for (const [i, p, v] of rest.extra || []) (byProp[p] = byProp[p] || []).push([i, v]);
+      rest.extra = Object.entries(byProp).filter(([, l]) => new Set(l.map((x) => x[1])).size > 1).flatMap(([p, l]) => l.map(([i, v]) => [i, p, v]));
       const el2 = el.deref();
       if (el2) {
         rest.parentSel = el2.parentElement ? selector(el2.parentElement) : null;
@@ -2541,6 +2755,9 @@
     rectsFor,
     tracksUnder,
     watch,
+    listToggles,
+    toggleState,
+    isNeutralPoint,
     layoutOf,
     // recorder tracks only (lighter than collectMotion)
     recorderData: () => recorderData(),
@@ -2553,6 +2770,8 @@
     threeState,
     glState,
     fetchBase64,
+    threeMotion: () => [...three.tracks.values()].filter((tk) => tk.t.length > 2).map(({ last, ...tk }) => tk),
+    lottieState,
     // Big raw dump. Called at the end of the scan.
     collectMotion: () => {
       sampleAnimations();

@@ -32,6 +32,10 @@ export const EFFECT_TYPES = {
   particles: 'Particle system (WebGL points or canvas2d).',
   'gpgpu-simulation': 'GPU simulation (ping-pong render targets, e.g. GPUComputationRenderer) feeding a visual effect.',
   '3d-scene': 'Three.js / WebGL 3D scene with meshes, lights, camera.',
+  'camera-scroll-path': '3D camera travelling along a path driven by the scroll (position / rotation / fov keyframes).',
+  '3d-object-motion': '3D object moved, rotated or scaled over time, on load, on scroll or in a loop.',
+  'press-hold': 'Effect triggered by pressing and holding (pointer down), released on pointer up.',
+  'tabs': 'Tabs / segmented control switching panels with a transition.',
   'model-viewer': '3D model presented in a viewer.',
   'split-screen': 'Split layout where halves move independently.',
   'sticky-stack-cards': 'Cards stack on top of each other using sticky positioning / pinning.',
@@ -46,7 +50,7 @@ export const EFFECT_TYPES = {
   other: 'Motion that does not match a known type.',
 };
 
-export const TRIGGERS = ['load', 'scroll-enter', 'scroll-scrub', 'hover', 'mouse-move', 'click', 'drag', 'time-loop', 'route-change'];
+export const TRIGGERS = ['load', 'scroll-enter', 'scroll-scrub', 'hover', 'press', 'mouse-move', 'click', 'drag', 'time-loop', 'route-change'];
 export const TECHNIQUES = ['css-transition', 'css-keyframes', 'css-scroll-timeline', 'waapi', 'gsap-tween', 'gsap-timeline', 'gsap-scrolltrigger', 'framer-motion', 'webgl-shader', 'three-scene', 'canvas2d', 'svg', 'lottie', 'video', 'js-inline-style'];
 
 export function isKnownType(t) {

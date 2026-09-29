@@ -1,0 +1,14 @@
+{
+  "stack": ["three", "webgl"],
+  "scroll": { "type": "native" },
+  "maxEffects": 16,
+  "effects": [
+    { "effect_type": "camera-scroll-path", "trigger": "scroll-scrub", "source": "read:three" },
+    { "effect_type": "3d-object-motion", "trigger": "time-loop", "source": "read:three" },
+    { "effect_type": "mouse-parallax", "trigger": "mouse-move", "source": "read:three" },
+    { "effect_type": "menu-overlay", "trigger": "click", "source": "measured:toggle" },
+    { "effect_type": "accordion", "trigger": "click", "source": "measured:toggle" },
+    { "effect_type": "press-hold", "trigger": "press", "source": "measured:press" }
+  ],
+  "tier": "B"
+}

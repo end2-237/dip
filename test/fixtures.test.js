@@ -8,7 +8,7 @@ import { capture } from '../cli/dip-capture.js';
 
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
 
-for (const fx of ['gsap-lenis', 'css-only', 'webgl-shader']) {
+for (const fx of ['gsap-lenis', 'css-only', 'webgl-shader', 'three-interactions']) {
   test(`fixture ${fx} matches expected.json`, { timeout: 300000 }, async () => {
     const expected = JSON.parse(fs.readFileSync(`fixtures/${fx}/expected.json`, 'utf8'));
     const s = await serve('fixtures', 0);
@@ -34,7 +34,7 @@ for (const fx of ['gsap-lenis', 'css-only', 'webgl-shader']) {
       if (ex.stagger != null) assert.ok(near(a.stagger, ex.stagger, 0.01), `${hit.id} stagger ${a.stagger}`);
       if (ex.delay != null) assert.ok(near(a.delay, ex.delay, 0.05), `${hit.id} delay ${a.delay}`);
     }
-    assert.ok(analysis.effects.length <= expected.effects.length + 1, `no spurious effects (${analysis.effects.map((e) => e.id).join(', ')})`);
+    assert.ok(analysis.effects.length <= (expected.maxEffects || expected.effects.length + 1), `no spurious effects (${analysis.effects.map((e) => e.id).join(', ')})`);
     for (const w of expected.webgl || []) {
       const card = analysis.webgl.cards.find((c) => c.type === w.type);
       assert.ok(card, `webgl ${w.type}`);

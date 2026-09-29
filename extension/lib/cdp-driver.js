@@ -48,6 +48,10 @@ export class CdpDriver {
     await this.send('Emulation.setScrollbarsHidden', { hidden: true }).catch(() => {});
   }
 
+  async navigate(url) {
+    await this.send('Page.navigate', { url });
+  }
+
   async reload() {
     await this.send('Page.reload', { ignoreCache: false });
   }
@@ -77,6 +81,20 @@ export class CdpDriver {
 
   async mouseMove(x, y) {
     await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x), y: Math.round(y) });
+  }
+
+  async mouseDown(x, y) {
+    await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(x), y: Math.round(y), button: 'left', buttons: 1, clickCount: 1 });
+  }
+
+  async mouseUp(x, y) {
+    await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(x), y: Math.round(y), button: 'left', buttons: 0, clickCount: 1 });
+  }
+
+  async key(key) {
+    const codes = { Escape: 27, Enter: 13, Tab: 9 };
+    await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: codes[key] || 0 });
+    await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: codes[key] || 0 });
   }
 
   async mouseClick(x, y) {
