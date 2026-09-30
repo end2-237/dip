@@ -1,0 +1,45 @@
+# Publishes one GitHub release per entry of .github/releases.json that does not exist yet:
+# tag on the listed commit ("main" = the commit that triggered the run), notes = the matching section of
+# CHANGELOG.md, and the packaged extension attached to the newest release.
+# Add a line to releases.json + a CHANGELOG section, push to main → the release appears.
+name: Releases
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/releases.json', 'CHANGELOG.md', '.github/workflows/release.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Package the extension
+        run: node scripts/package-extension.js
+      - name: Create missing tags and releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest=$(node -e "const r=require('./.github/releases.json'); console.log(r[r.length-1].tag)")
+          node -e "for (const r of require('./.github/releases.json')) console.log([r.tag, r.commit, r.title].join('\t'))" |
+          while IFS=$'\t' read -r tag commit title; do
+            if gh release view "$tag" >/dev/null 2>&1; then echo "✓ $tag already published"; continue; fi
+            sha=$(git rev-parse "${commit/main/$GITHUB_SHA}")
+            # notes: the "## vX.Y.Z" section of CHANGELOG.md
+            awk -v t="## $tag" 'index($0, t) == 1 {on=1; next} /^## v/ {if (on) exit} on' CHANGELOG.md > notes.md
+            printf '\n\n---\nTélécharger cette version : https://github.com/%s/archive/refs/tags/%s.zip\n' "$GITHUB_REPOSITORY" "$tag" >> notes.md
+            assets=()
+            if [ "$tag" = "$latest" ]; then assets=(dist/dip-extension-*.zip); fi
+            gh release create "$tag" --target "$sha" --title "$title" --notes-file notes.md ${assets[@]+"${assets[@]}"}
+            echo "✓ published $tag on $sha"
+          done

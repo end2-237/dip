@@ -3,6 +3,10 @@
 Chaque version est un tag Git (`vX.Y.Z`). Pour récupérer une version précise :
 `https://github.com/end2-237/dip/archive/refs/tags/vX.Y.Z.zip`.
 
+Les versions sont publiées automatiquement (onglet **Releases** du dépôt) par le workflow
+`.github/workflows/release.yml` : pour une nouvelle version, ajouter une ligne à `.github/releases.json`
+et une section ici, puis pousser sur `main`. Le zip de l'extension est joint à la dernière release.
+
 La **version de l'analyseur** (affichée dans Réglages) décide du badge « ancienne version » des sites de la
 bibliothèque : elle ne change que lorsqu'une redissection apporte vraiment de nouvelles mesures.
 

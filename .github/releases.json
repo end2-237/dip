@@ -1,0 +1,7 @@
+[
+  { "tag": "v0.1.0", "commit": "09ff47a", "title": "DIP v0.1.0 — première version utilisable" },
+  { "tag": "v0.1.1", "commit": "e13fb63", "title": "DIP v0.1.1 — 3D et interactions" },
+  { "tag": "v0.1.2", "commit": "05ac355", "title": "DIP v0.1.2 — création et tableau de bord" },
+  { "tag": "v0.2.0", "commit": "166f37c", "title": "DIP v0.2.0 — décors, compositions, interactions, redissection" },
+  { "tag": "v0.3.0", "commit": "main", "title": "DIP v0.3.0 — qualité, analyse ciblée, catégories, collecte" }
+]
