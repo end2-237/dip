@@ -3,3 +3,4 @@ dip-packs/
 *.zip
 .DS_Store
 dist/
+extension/install.json

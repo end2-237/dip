@@ -42,6 +42,11 @@ Quand une nouvelle version sort, un bandeau apparaît dans le tableau de bord et
 1. **Copier la commande** → colle-la dans PowerShell.
 2. **Recharger DIP**.
 
+La commande est aussi dans **Réglages** et dans **Guide**. Elle contient déjà ton dossier d'installation
+(`$env:DIP_HOME = "…"; irm … | iex`) : c'est bien le dossier que Chrome charge qui est mis à jour. Ce dossier est
+rempli tout seul après la première mise à jour ; sinon, écris-le une fois dans Réglages → Dossier
+d'installation de DIP (celui qui contient `extension\`).
+
 C'est tout. À la réouverture du tableau de bord, DIP met aussi à jour la bibliothèque : commandes `/dip-*`,
 skills, `QUALITY_RULES.md`, index. Tes scans, tes analyses, tes sites, tes ADN, `LESSONS.md` et tes
 catégories ne sont jamais touchés. Les scans d'une ancienne version portent le badge « ancienne version » :
@@ -51,6 +56,8 @@ catégories ne sont jamais touchés. Les scans d'une ancienne version portent le
 
 - **Un site** : ouvre-le dans Chrome → icône DIP → mode **Deep** → **Disséquer ce site**. Garde le panneau
   ouvert pendant 1 à 3 minutes. Le pack est enregistré tout seul dans `packs/`.
+- **Site déjà disséqué** : DIP te prévient (date, ADN écrit ou non) et te demande si tu veux le redisséquer.
+  Si oui, la nouvelle analyse remplace l'ancienne ; l'ADN, les notes et les catégories sont gardés.
 - **Plusieurs sites** : tableau de bord → **Collecte** → colle les adresses (une par ligne), choisis le secteur
   et le style si tu les connais → **Lancer la collecte**. Compte 3 à 6 minutes par site. Laisse le tableau de bord visible.
 - **Où trouver des sites** : la page Collecte liste les sources (Awwwards, FWA, CSSDA, Godly…) et montre les

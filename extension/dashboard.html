@@ -213,7 +213,11 @@
       <div class="set-row"><div><div class="set-t">Dossier de la bibliothèque</div><div class="muted small" id="set-folder">—</div></div><button id="set-pick">Changer</button></div>
       <div class="set-row"><div><div class="set-t">Reconstruire l’index</div><div class="muted small">LIBRARY.md, EFFECTS.md, index.json et les commandes Claude Code.</div></div><button id="set-reindex">Reconstruire</button></div>
       <div class="set-row"><div><div class="set-t">Images et objets 3D</div><div class="muted small">Génération à l’unité avec <span class="mono">dip-assets</span> (fal.ai) : ≈ 0,03 $ l’image, 0,05–1,50 $ l’objet 3D. La clé se met dans une variable d’environnement, jamais ici.</div></div></div>
-      <div class="set-row"><div><div class="set-t">Version de DIP</div><div class="muted small">Extension <span class="mono" id="set-version"></span> · analyseur <span class="mono" id="set-analyzer"></span>. Mise à jour : <span class="mono">irm https://raw.githubusercontent.com/end2-237/dip/main/scripts/update-dip.ps1 | iex</span> dans PowerShell.</div></div><button id="set-upd">Vérifier</button></div>
+      <div class="set-row"><div><div class="set-t">Version de DIP</div><div class="muted small">Extension <span class="mono" id="set-version"></span> · analyseur <span class="mono" id="set-analyzer"></span></div></div><button id="set-upd">Vérifier</button></div>
+      <div class="set-row col"><div><div class="set-t">Dossier d’installation de DIP</div><div class="muted small">Le dossier qui contient <span class="mono">extension\</span>, celui que Chrome charge. Rempli tout seul par la commande de mise à jour.</div></div>
+        <input type="text" id="set-home" placeholder="D:\DIP" spellcheck="false">
+        <div class="g-cmd"><span class="mono" id="set-cmd"></span><button id="set-cmd-copy">Copier</button></div>
+        <div class="muted small">À coller dans PowerShell pour mettre DIP à jour, puis « Recharger DIP » (ou ↻ dans <span class="mono">chrome://extensions</span>).</div></div>
       <div class="set-row"><div><div class="set-t">Structure du dossier</div><div class="muted small mono">packs/ · effects/ · sites/ · briefs/ · production/ · LIBRARY.md · EFFECTS.md · PATTERNS.md · QUALITY_RULES.md · LESSONS.md · .claude/</div></div></div>
     </div>
   </section>
@@ -230,6 +234,7 @@
     <div class="label">Scanner un site</div>
     <h2>Quelle page veux-tu disséquer ?</h2>
     <input type="url" id="scan-url" placeholder="https://…" required>
+    <p class="hint warn" id="scan-dup" hidden></p>
     <p class="hint">La page s’ouvre avec le panneau DIP : clique sur « Disséquer ce site ». Le pack sera rangé dans ta bibliothèque.</p>
     <div class="row gap end"><button value="cancel" class="ghost">Annuler</button><button value="ok" class="primary" id="scan-go">Ouvrir et scanner</button></div>
   </form>

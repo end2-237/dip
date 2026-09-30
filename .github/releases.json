@@ -31,7 +31,12 @@
   },
   {
     "tag": "v0.3.2",
-    "commit": "main",
+    "commit": "95727fc",
     "title": "DIP v0.3.2 — bibliothèque synchronisée et guide"
+  },
+  {
+    "tag": "v0.3.3",
+    "commit": "main",
+    "title": "DIP v0.3.3 — commande de mise à jour personnalisée, sites déjà disséqués"
   }
 ]

@@ -1,5 +1,5 @@
 // DIP Studio — full-page dashboard: library folder, scans, measured animations, suggestions, creation commands.
-import { getRoot, pickRoot, access, fsAdapter, readBlob, savePack, removePack, writeFile, saveFocus } from './lib/workspace.js';
+import { getRoot, pickRoot, access, fsAdapter, readBlob, savePack, replacePack, removePack, writeFile, saveFocus } from './lib/workspace.js';
 import { categoryCoverage, listFocus, listPacks, writeIndex, syncLibrary, effectsByType, rankReferences, librarySuggestions, libraryStats, words, versionLess, libraryPatterns } from './lib/library.js';
 import { ANALYZER_VERSION } from './lib/analyzer.js';
 import { SECTORS, STYLES, TECHNIQUES, SOURCES, label as catLabel } from './lib/categories.js';
@@ -7,7 +7,7 @@ import { buildPackFiles, packName } from './lib/pack.js';
 import { dissectUrl, shareImage, focusUrl } from './lib/runner.js';
 import { analyzeFocus, focusFiles } from './lib/focus.js';
 import { stepLabel } from './lib/i18n.js';
-import { checkUpdate, UPDATE_CMD } from './lib/update.js';
+import { checkUpdate, updateCommand, installHome, setInstallHome } from './lib/update.js';
 import { readPackZip } from './lib/unzip-web.js';
 import { EFFECT_TYPES } from './lib/taxonomy.js';
 
@@ -562,7 +562,8 @@ $('#col-form').addEventListener('submit', async (e) => {
         $('#job-step').textContent = 'Enregistrement…';
         const files = await buildPackFiles(cap, analysis, { mode: 'study' });
         if (sector || styles.length) files.push({ path: 'tags.json', data: JSON.stringify({ sector: sector || undefined, styles, source: 'collecte', updated: new Date().toISOString() }, null, 2) });
-        await savePack(state.root, packName(cap), files);
+        // a site already in the library (collect without « ignorer ») is replaced, keeping its DNA
+        await replacePack(state.root, packName(cap), files, state.packs.filter((p) => p.domain === hostOf(url)));
         ok++;
       } catch (err) {
         console.error(err);
@@ -778,7 +779,6 @@ $('#cr-copy').onclick = () => copy($('#cr-cmd').textContent);
 // ------------------------------------------------------------------ re-dissect (new DIP version, same URLs)
 const isOld = (p) => versionLess(p.analyzerVersion, ANALYZER_VERSION);
 let reBusy = false;
-const KEEP = ['DESIGN_DNA.md', 'dna.json', 'NOTES.md']; // written by Claude: kept across re-dissections
 async function redissect(list) {
   if (reBusy || !list.length) return;
   if (!ready()) return toast('Autorise d’abord l’accès au dossier');
@@ -804,14 +804,8 @@ async function redissect(list) {
         if (!analysis) throw new Error((cap.log.find((l) => l.level === 'error') || {}).error || 'analyse impossible');
         $('#job-step').textContent = 'Enregistrement dans la bibliothèque…';
         const files = await buildPackFiles(cap, analysis, { mode, transformImage: mode === 'share' ? shareImage : null });
-        const fsa = fsAdapter(state.root);
-        for (const f of KEEP) {
-          const text = await fsa.readText(`${p.path}/${f}`);
-          if (text != null && !files.some((x) => x.path === f)) files.push({ path: f, data: text });
-        }
-        const name = packName(cap) + (mode === 'share' ? '_share' : '');
-        await savePack(state.root, name, files);
-        if (name !== p.name) await removePack(state.root, p.name);
+        // DNA, notes and categories written by Claude or by you are carried over
+        await replacePack(state.root, packName(cap) + (mode === 'share' ? '_share' : ''), files, [p]);
         ok++;
       } catch (e) {
         toast(`${p.domain} : ${e.message || e}`);
@@ -828,7 +822,19 @@ async function redissect(list) {
 $('#btn-redissect-all').onclick = () => redissect(state.packs.filter(isOld));
 
 // ------------------------------------------------------------------ scan & import
-$('#btn-scan').onclick = () => $('#dlg-scan').showModal();
+$('#btn-scan').onclick = () => {
+  $('#scan-dup').hidden = true;
+  $('#dlg-scan').showModal();
+};
+$('#scan-url').addEventListener('input', () => {
+  let url = $('#scan-url').value.trim();
+  if (url && !/^https?:\/\//.test(url)) url = 'https://' + url;
+  const host = hostOf(url);
+  const known = host ? state.packs.filter((p) => p.domain === host) : [];
+  const el = $('#scan-dup');
+  el.hidden = !known.length;
+  if (known.length) el.textContent = `Déjà disséqué le ${fmtDate(known[0].date)}${known[0].hasDna ? ' (avec ADN)' : ''}. Le panneau te demandera si tu veux le redisséquer ; l’ADN, les notes et les catégories sont gardés.`;
+});
 $('#scan-go').onclick = (e) => {
   e.preventDefault();
   let url = $('#scan-url').value.trim();
@@ -864,8 +870,20 @@ $('#ws-btn').onclick = () => (state.root && state.access !== 'granted' ? loadWor
 $('#btn-pick').onclick = choose;
 $('#set-pick').onclick = choose;
 $('#btn-pick-help').onclick = () => ($('#pick-help').hidden = !$('#pick-help').hidden);
-$('#g-upd').textContent = UPDATE_CMD;
-$('#g-upd-copy').onclick = () => copy(UPDATE_CMD);
+// the update command carries the install folder (extension/install.json or Réglages)
+async function showUpdateCmd() {
+  const cmd = await updateCommand();
+  $('#g-upd').textContent = cmd;
+  $('#set-cmd').textContent = cmd;
+  return cmd;
+}
+$('#g-upd-copy').onclick = async () => copy(await updateCommand());
+$('#set-cmd-copy').onclick = async () => copy(await updateCommand());
+$('#set-home').addEventListener('change', async () => {
+  $('#set-home').value = (await setInstallHome($('#set-home').value)) || '';
+  await showUpdateCmd();
+  toast('Dossier d’installation enregistré');
+});
 $('#set-upd').onclick = async () => {
   const u = await showUpdate(true);
   toast(!u ? 'Vérification impossible (hors ligne ?)' : u.available ? `${u.tag} disponible` : `DIP est à jour (v${u.current})`);
@@ -903,7 +921,7 @@ async function showUpdate(force) {
   }
   el.hidden = false;
   el.innerHTML = `<span><b>${esc(u.name || u.tag)}</b> est disponible (tu as la v${esc(u.current)}). Colle la commande dans PowerShell, puis recharge DIP.</span><span class="acts"><button id="upd-copy" class="primary">Copier la commande</button><button id="upd-reload">Recharger DIP</button><a class="link" href="${esc(u.url)}" target="_blank" rel="noopener">Nouveautés ↗</a></span>`;
-  $('#upd-copy').onclick = () => copy(UPDATE_CMD);
+  $('#upd-copy').onclick = async () => copy(await updateCommand());
   $('#upd-reload').onclick = () => chrome.runtime.reload();
   return u;
 }
@@ -918,6 +936,8 @@ async function showUpdate(force) {
   }
   $('#set-analyzer').textContent = ANALYZER_VERSION;
   showUpdate(false);
+  installHome().then((h) => ($('#set-home').value = h || '')).catch(() => {});
+  showUpdateCmd().catch(() => {});
   try {
     state.windowId = (await chrome.windows.getCurrent()).id;
   } catch (e) {

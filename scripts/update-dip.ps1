@@ -29,6 +29,9 @@ New-Item -ItemType Directory $dest -Force | Out-Null
 robocopy $src.FullName $dest /E /XD node_modules dist .git /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "Copie impossible (robocopy $LASTEXITCODE)" }
 
+# DIP affiche ensuite la commande de mise à jour avec ce dossier (tableau de bord → Réglages, Guide, bandeau)
+@{ home = $dest; version = $tag; installed = (Get-Date).ToString('s') } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $dest 'extension\install.json')
+
 Push-Location $dest
 try {
   if (Get-Command npm -ErrorAction SilentlyContinue) {

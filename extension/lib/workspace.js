@@ -1,7 +1,7 @@
 // Workspace folder = the DIP library on disk (File System Access API). The directory handle is kept in
 // IndexedDB; Chrome asks again for access after a restart, which needs a click (requestPermission).
 import { saveScan, loadScan } from './store.js';
-import { writeIndex } from './library.js';
+import { writeIndex, listPacks } from './library.js';
 
 const KEY = 'workspace';
 
@@ -82,6 +82,49 @@ export async function savePack(root, name, files, onProgress) {
   }
   await writeIndex(fsAdapter(root));
   return `packs/${name}`;
+}
+
+const hostOf = (u) => {
+  try {
+    return new URL(u).hostname.replace(/^www\./, '');
+  } catch (e) {
+    return '';
+  }
+};
+
+// Packs already in the library for this site (same domain), newest first. Reads index.json (fast),
+// falls back to scanning packs/ when the index is missing.
+export async function findPacksFor(root, url) {
+  const host = hostOf(url);
+  if (!root || !host) return [];
+  const fsa = fsAdapter(root);
+  let packs = null;
+  try {
+    packs = (JSON.parse((await fsa.readText('index.json')) || 'null') || {}).packs || null;
+  } catch (e) {
+    /* rebuild below */
+  }
+  if (!packs) packs = await listPacks(fsa).catch(() => []);
+  return packs.filter((p) => hostOf(p.url) === host || p.domain === host).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+// Files written by Claude or by the user: carried over when a site is dissected again
+export const KEEP_ON_REDISSECT = ['DESIGN_DNA.md', 'dna.json', 'NOTES.md', 'tags.json'];
+
+// Save a new dissection of a site that is already in the library: keeps the DNA, notes and categories
+// of the previous pack(s), then removes them.
+export async function replacePack(root, name, files, previous, onProgress) {
+  const fsa = fsAdapter(root);
+  for (const old of previous || []) {
+    for (const f of KEEP_ON_REDISSECT) {
+      if (files.some((x) => x.path === f)) continue;
+      const text = await fsa.readText(`${old.path}/${f}`);
+      if (text != null) files.push({ path: f, data: text });
+    }
+  }
+  const dir = await savePack(root, name, files, onProgress);
+  for (const old of previous || []) if (old.name !== name) await removePack(root, old.name).catch(() => {});
+  return dir;
 }
 
 export async function removePack(root, name) {

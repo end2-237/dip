@@ -1,6 +1,6 @@
 {
   "name": "dip",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "DIP \u2014 Design Intelligence Pipeline: Chrome extension + CLI that dissect creative websites into a Reproduction Pack for coding agents.",
   "type": "module",
   "private": true,

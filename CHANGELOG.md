@@ -10,6 +10,14 @@ et une section ici, puis pousser sur `main`. Le zip de l'extension est joint à 
 La **version de l'analyseur** (affichée dans Réglages) décide du badge « ancienne version » des sites de la
 bibliothèque : elle ne change que lorsqu'une redissection apporte vraiment de nouvelles mesures.
 
+## v0.3.3 — Commande de mise à jour personnalisée, sites déjà disséqués
+- La commande de mise à jour affichée par DIP (bandeau, Réglages, Guide) contient le dossier d'installation :
+  `$env:DIP_HOME = "…"; irm … | iex`. Le script l'écrit dans `extension/install.json` ; on peut aussi le
+  saisir dans Réglages → Dossier d'installation de DIP.
+- Disséquer un site déjà présent dans la bibliothèque : le panneau le signale (date, ADN) et demande
+  confirmation ; la fenêtre « Scanner un site » prévient aussi. Une redissection (panneau, Collecte,
+  redissection en un clic) garde l'ADN, les notes et les catégories (`tags.json`) de l'ancienne analyse.
+
 ## v0.3.2 — Bibliothèque synchronisée et guide
 - Après une mise à jour, le tableau de bord réécrit tout seul les commandes `/dip-*`, les skills,
   `QUALITY_RULES.md` et l'index de la bibliothèque (une fois par version). Scans, analyses, sites, ADN,

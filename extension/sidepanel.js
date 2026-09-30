@@ -4,7 +4,7 @@ import { dissectTab, shareImage, focusTab } from './lib/runner.js';
 import { analyzeFocus, focusFiles } from './lib/focus.js';
 import { checkUpdate } from './lib/update.js';
 import { buildPackZip, buildPackFiles, packName } from './lib/pack.js';
-import { getRoot, access, savePack, saveFocus } from './lib/workspace.js';
+import { getRoot, access, saveFocus, findPacksFor, replacePack } from './lib/workspace.js';
 import { synthesize } from './lib/llm.js';
 import { saveScan, loadScan } from './lib/store.js';
 import { t as tr, stepLabel } from './lib/i18n.js';
@@ -109,6 +109,11 @@ async function start(manual) {
   const root = await getRoot().catch(() => null);
   const rootOk = root ? (await access(root, true).catch(() => 'denied')) === 'granted' : false;
   message('');
+  // already in the library? ask before dissecting again
+  if (rootOk) {
+    const existing = await findPacksFor(root, tab.url).catch(() => []);
+    if (existing.length && !(await askRedo(existing))) return;
+  }
   $('#review').hidden = true;
   setBusy(true);
   $('#progress-title').textContent = manual ? t('manualRunning') : t('running');
@@ -253,6 +258,24 @@ async function exportPack(selectedOnly) {
   }
 }
 
+function askRedo(existing) {
+  const fmt = (d) => (d ? new Date(d).toLocaleDateString(settings.lang === 'en' ? 'en-GB' : 'fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '?');
+  const list = existing.slice(0, 3).map((p) => `${p.url ? new URL(p.url).pathname.replace(/\/$/, '') || '/' : p.name} (${fmt(p.date)}${p.hasDna ? ', ' + t('dnaShort') : ''})`).join(' · ');
+  $('#dup-text').textContent = t('dupText').replace('{list}', list);
+  const box = $('#dup');
+  box.hidden = false;
+  box.scrollIntoView({ block: 'nearest' });
+  return new Promise((resolve) => {
+    const done = (v) => {
+      box.hidden = true;
+      $('#dup-redo').onclick = $('#dup-cancel').onclick = null;
+      resolve(v);
+    };
+    $('#dup-redo').onclick = () => done(true);
+    $('#dup-cancel').onclick = () => done(false);
+  });
+}
+
 async function saveToLibrary(root, auto) {
   if (!current) return;
   readForm();
@@ -269,7 +292,9 @@ async function saveToLibrary(root, auto) {
     const selection = null;
     const files = await buildPackFiles(current.cap, current.analysis, { mode: settings.exportMode, selection, transformImage: settings.exportMode === 'share' ? shareImage : null });
     const name = packName(current.cap).replace(/\.zip$/, '') + (settings.exportMode === 'share' ? '_share' : '');
-    const dir = await savePack(root, name, files, (f) => message(`${t('saveLib')}… ${Math.round(f * 100)}%`));
+    // a site already in the library is replaced; its DNA, notes and categories are carried over
+    const previous = await findPacksFor(root, current.cap.meta && current.cap.meta.url).catch(() => []);
+    const dir = await replacePack(root, name, files, previous, (f) => message(`${t('saveLib')}… ${Math.round(f * 100)}%`));
     message(`${auto ? t('done') + ' · ' : ''}${t('savedLib')} : ${root.name}/${dir}`, 'ok');
   } catch (e) {
     console.error(e);

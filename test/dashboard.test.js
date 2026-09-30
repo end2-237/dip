@@ -97,6 +97,31 @@ test('dashboard: import packs, browse, prepare commands', { timeout: 180000 }, a
     await page.waitForSelector('.issue');
     assert.match(await page.textContent('#dr-body'), /\/dip-review sites\/demo/);
     assert.match(await page.textContent('#dr-body'), /alpha-hotel\.test/);
+    // a site dissected again: found in the library, replaced, its DNA and categories kept
+    const again = await page.evaluate(async () => {
+      const ws = await import('./lib/workspace.js');
+      const root = await navigator.storage.getDirectory();
+      const [old] = await ws.findPacksFor(root, 'https://www.alpha-hotel.test/rooms');
+      await ws.writeFile(root, old.path + '/DESIGN_DNA.md', '# ADN alpha');
+      await ws.writeFile(root, old.path + '/tags.json', '{"sector":"hotellerie-restauration"}');
+      await ws.replacePack(root, 'dip-pack_alpha-hotel.test_2026-10-01', [{ path: 'manifest.json', data: JSON.stringify({ url: 'https://alpha-hotel.test/', date: '2026-10-01T10:00:00Z' }) }], [old]);
+      const fsa = ws.fsAdapter(root);
+      const now = await ws.findPacksFor(root, 'https://alpha-hotel.test/');
+      return { n: now.length, name: now[0].name, dna: await fsa.readText(now[0].path + '/DESIGN_DNA.md'), tags: await fsa.readText(now[0].path + '/tags.json'), oldGone: (await fsa.readText(old.path + '/SPEC.md')) == null, none: (await ws.findPacksFor(root, 'https://other.test/')).length };
+    });
+    assert.deepEqual(again, { n: 1, name: 'dip-pack_alpha-hotel.test_2026-10-01', dna: '# ADN alpha', tags: '{"sector":"hotellerie-restauration"}', oldGone: true, none: 0 });
+    // scan dialog warns about a site already in the library
+    await page.reload();
+    await page.click('#btn-scan');
+    await page.fill('#scan-url', 'alpha-hotel.test');
+    assert.match(await page.textContent('#scan-dup'), /Déjà disséqué/);
+    await page.keyboard.press('Escape');
+    // update command carries the install folder typed in Réglages
+    await page.goto(page.url().replace(/#.*/, '#settings'));
+    await page.fill('#set-home', 'D:\\dip-x\\dip-x\\extension\\');
+    await page.dispatchEvent('#set-home', 'change');
+    await page.waitForFunction(() => document.querySelector('#set-cmd').textContent.startsWith('$env:DIP_HOME'));
+    assert.equal(await page.textContent('#set-cmd'), '$env:DIP_HOME = "D:\\dip-x\\dip-x"; irm https://raw.githubusercontent.com/end2-237/dip/main/scripts/update-dip.ps1 | iex');
     assert.deepEqual(errors, []);
   } finally {
     await ctx.close();
@@ -198,6 +223,41 @@ test('dashboard: focus analysis of one circled animation', { timeout: 300000 }, 
     assert.match(out.md, /\/dip-effect/);
     assert.match(out.lib, /Focused analyses/);
     await page.waitForSelector('#drawer:not([hidden]) .frames img');
+    assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+    await srv.close();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('side panel: a site already in the library asks before dissecting again', { timeout: 120000 }, async () => {
+  const { chromium } = await import('playwright');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dipdup-'));
+  const srv = await serve('fixtures', 0);
+  const ext = path.resolve('extension');
+  const ctx = await chromium.launchPersistentContext(path.join(tmp, 'profile'), { headless: false, args: ['--headless=new', `--disable-extensions-except=${ext}`, `--load-extension=${ext}`] });
+  try {
+    let [sw] = ctx.serviceWorkers();
+    if (!sw) sw = await ctx.waitForEvent('serviceworker');
+    const id = new URL(sw.url()).host;
+    const dash = await ctx.newPage();
+    await dash.goto(`chrome-extension://${id}/dashboard.html?opfs=1#library`);
+    await dash.setInputFiles('#file-import', [await fakePack(tmp, '127.0.0.1', 'e01-hero-text-reveal-lines')]);
+    await dash.waitForFunction(() => document.querySelector('#nav-count').textContent === '1', null, { timeout: 60000 });
+    const site = await ctx.newPage();
+    await site.goto(srv.url + '/css-only/');
+    const tabId = await sw.evaluate(async () => (await chrome.tabs.query({})).find((t) => /css-only/.test(t.url)).id);
+    const panel = await ctx.newPage();
+    const errors = [];
+    panel.on('pageerror', (e) => errors.push(e.message));
+    await panel.goto(`chrome-extension://${id}/sidepanel.html?opfs=1&tab=${tabId}`);
+    await panel.click('#btn-dissect');
+    await panel.waitForSelector('#dup:not([hidden])');
+    assert.match(await panel.textContent('#dup'), /déjà disséqué/i);
+    await panel.click('#dup-cancel');
+    assert.equal(await panel.locator('#dup').isHidden(), true);
+    assert.equal(await panel.locator('#progress').isHidden(), true);
     assert.deepEqual(errors, []);
   } finally {
     await ctx.close();
