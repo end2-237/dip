@@ -52,3 +52,15 @@ test('dip-library indexes packs and exposes the Claude Code commands', async () 
   assert.match(found, /a\.test[\s\S]*e01-hero-text-reveal-lines/);
   fs.rmSync(tmp, { recursive: true, force: true });
 });
+
+test('library: commands and rules are rewritten once after a DIP update', async () => {
+  const { syncLibrary } = await import('../extension/lib/library.js');
+  const { DIP_VERSION } = await import('../extension/lib/pack.js');
+  const files = new Map([['index.json', JSON.stringify({ generator: 'DIP library', packs: [] })], ['LESSONS.md', '# mes leçons\n']]);
+  const fsa = { list: async () => [], readText: async (p) => files.get(p) ?? null, writeText: async (p, t) => void files.set(p, t) };
+  assert.equal(await syncLibrary(fsa), true);
+  assert.equal(JSON.parse(files.get('index.json')).dipVersion, DIP_VERSION);
+  assert.match(files.get('.claude/commands/dip-review.md'), /DIP_HOME/);
+  assert.match(files.get('LESSONS.md'), /mes leçons/);
+  assert.equal(await syncLibrary(fsa), false);
+});

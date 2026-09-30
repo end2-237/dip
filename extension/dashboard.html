@@ -23,6 +23,7 @@
     <a href="#motion" data-page="motion"><svg viewBox="0 0 16 16"><path d="M2 11c2.5 0 3-6 6-6s3.5 6 6 6"/></svg><span>Effets</span></a>
     <a href="#collect" data-page="collect"><svg viewBox="0 0 16 16"><path d="M3 4.5h10M3 8h10M3 11.5h6"/><path d="m11 11.5 1.5 1.5 2.5-3"/></svg><span>Collecte</span></a>
     <a href="#create" data-page="create"><svg viewBox="0 0 16 16"><path d="M8 2.5v11M2.5 8h11"/></svg><span>Créer</span></a>
+    <a href="#guide" data-page="guide"><svg viewBox="0 0 16 16"><path d="M3 2.5h7.5L13 5v8.5H3z"/><path d="M5.5 7h5M5.5 9.5h5M5.5 12h3"/></svg><span>Guide</span></a>
     <a href="#settings" data-page="settings"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M3.6 12.4l1.3-1.3M11.1 4.9l1.3-1.3"/></svg><span>Réglages</span></a>
   </nav>
   <div class="ws" id="ws">
@@ -194,13 +195,26 @@
     </div>
   </section>
 
+  <section id="page-guide" class="page" hidden>
+    <div class="guide">
+      <p class="muted g-intro">DIP comporte trois éléments, chacun dans son propre dossier. <b>DIP</b> (<span class="mono">D:\DIP</span>) scanne et contrôle, et se met à jour avec une commande. Ta <b>bibliothèque</b> garde tes scans, tes effets et tes sites ; DIP ne l’écrase jamais. <b>Claude Code</b>, ouvert dans la bibliothèque, crée et construit.</p>
+      <article class="g-step"><div class="g-n mono">01</div><div><h2>Installer et mettre à jour</h2><p class="muted">PowerShell, une seule fois puis à chaque nouvelle version (un bandeau te prévient) :</p><div class="g-cmd"><span class="mono" id="g-upd"></span><button id="g-upd-copy">Copier</button></div><p class="hint">Première fois : <span class="mono">chrome://extensions</span> → Mode développeur → Charger l’extension non empaquetée → <span class="mono">D:\DIP\extension</span>. Ensuite : commande, puis « Recharger DIP ». Les commandes <span class="mono">/dip-*</span>, les skills et les règles de ta bibliothèque se mettent à jour toutes seules.</p></div></article>
+      <article class="g-step"><div class="g-n mono">02</div><div><h2>Collecter</h2><p class="muted">Un site : icône DIP → mode Deep → « Disséquer ce site ». Plusieurs sites : page <a class="link" href="#collect">Collecte</a>, une adresse par ligne. Vise 20 sites variés ou plus, puis corrige secteur et style dans la fiche de chaque site.</p></div></article>
+      <article class="g-step"><div class="g-n mono">03</div><div><h2>Écrire les ADN</h2><p class="muted">Terminal <b>dans le dossier de la bibliothèque</b> → <span class="mono">claude</span> → <span class="mono">/dip-dna</span>. Claude écrit l’essence de chaque site (badge ADN).</p></div></article>
+      <article class="g-step"><div class="g-n mono">04</div><div><h2>Comprendre une animation</h2><p class="muted">Panneau DIP → « Analyser une animation précise » → Entourer → dessine un cercle. Puis <a class="link" href="#motion">Effets</a> → la carte → copie <span class="mono">/dip-effect …</span> dans Claude Code : nom, recherche web, recette exacte, démo.</p></div></article>
+      <article class="g-step"><div class="g-n mono">05</div><div><h2>Créer</h2><p class="muted">Page <a class="link" href="#create">Créer</a> : décris le projet, garde les références proposées, copie la commande dans Claude Code. Le site se construit dans <span class="mono">sites/&lt;projet&gt;</span> avec la richesse minimale : 10 sections, 12 visuels, 3 moments signature et des appels à l’action réguliers.</p></div></article>
+      <article class="g-step"><div class="g-n mono">06</div><div><h2>Contrôler</h2><p class="muted"><span class="mono">/dip-review sites/&lt;projet&gt;</span> : revue, corrections, nouveau passage ; les erreurs vont dans <span class="mono">LESSONS.md</span> pour ne plus se répéter. Objectif ≥ 85, suivi dans <a class="link" href="#sites">Sites</a>.</p></div></article>
+      <p class="hint g-foot">Tutoriel complet, dépannage et structure des dossiers : <a class="link" href="https://github.com/end2-237/dip/blob/main/docs/TUTORIEL.md" target="_blank" rel="noopener">TUTORIEL.md ↗</a></p>
+    </div>
+  </section>
+
   <section id="page-settings" class="page" hidden>
     <div class="panel narrow">
       <div class="set-row"><div><div class="set-t">Dossier de la bibliothèque</div><div class="muted small" id="set-folder">—</div></div><button id="set-pick">Changer</button></div>
       <div class="set-row"><div><div class="set-t">Reconstruire l’index</div><div class="muted small">LIBRARY.md, EFFECTS.md, index.json et les commandes Claude Code.</div></div><button id="set-reindex">Reconstruire</button></div>
       <div class="set-row"><div><div class="set-t">Images et objets 3D</div><div class="muted small">Génération à l’unité avec <span class="mono">dip-assets</span> (fal.ai) : ≈ 0,03 $ l’image, 0,05–1,50 $ l’objet 3D. La clé se met dans une variable d’environnement, jamais ici.</div></div></div>
       <div class="set-row"><div><div class="set-t">Version de DIP</div><div class="muted small">Extension <span class="mono" id="set-version"></span> · analyseur <span class="mono" id="set-analyzer"></span>. Mise à jour : <span class="mono">irm https://raw.githubusercontent.com/end2-237/dip/main/scripts/update-dip.ps1 | iex</span> dans PowerShell.</div></div><button id="set-upd">Vérifier</button></div>
-      <div class="set-row"><div><div class="set-t">Structure du dossier</div><div class="muted small mono">packs/ · briefs/ · production/ · LIBRARY.md · EFFECTS.md · .claude/commands/</div></div></div>
+      <div class="set-row"><div><div class="set-t">Structure du dossier</div><div class="muted small mono">packs/ · effects/ · sites/ · briefs/ · production/ · LIBRARY.md · EFFECTS.md · PATTERNS.md · QUALITY_RULES.md · LESSONS.md · .claude/</div></div></div>
     </div>
   </section>
 </main>

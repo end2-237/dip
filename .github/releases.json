@@ -26,7 +26,12 @@
   },
   {
     "tag": "v0.3.1",
-    "commit": "main",
+    "commit": "a10d051",
     "title": "DIP v0.3.1 — mises à jour en une commande"
+  },
+  {
+    "tag": "v0.3.2",
+    "commit": "main",
+    "title": "DIP v0.3.2 — bibliothèque synchronisée et guide"
   }
 ]

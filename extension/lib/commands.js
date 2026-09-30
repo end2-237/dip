@@ -35,6 +35,9 @@ export const QUALITY_RULES = `# QUALITY RULES — non-negotiable for every page 
    - 3+ signature moments spread over the page so the visitor stays dazzled until the end.
 10. Done means verified: \`node <DIP>/cli/dip-review.js --url <local url> --out sites/<slug>/review --library <library>\`
    scores ≥ 85, and every 🔴 item of REVIEW.md is fixed.
+
+<DIP> is the DIP install folder: env DIP_HOME (set by the update script; Windows default D:\\DIP). Tools run from
+any folder: \`node "$DIP_HOME/cli/dip-review.js" …\` (PowerShell: \`node "$env:DIP_HOME\\cli\\dip-review.js" …\`).
 `;
 
 export const DIP_DNA = `---

@@ -10,6 +10,15 @@ et une section ici, puis pousser sur `main`. Le zip de l'extension est joint à 
 La **version de l'analyseur** (affichée dans Réglages) décide du badge « ancienne version » des sites de la
 bibliothèque : elle ne change que lorsqu'une redissection apporte vraiment de nouvelles mesures.
 
+## v0.3.2 — Bibliothèque synchronisée et guide
+- Après une mise à jour, le tableau de bord réécrit tout seul les commandes `/dip-*`, les skills,
+  `QUALITY_RULES.md` et l'index de la bibliothèque (une fois par version). Scans, analyses, sites, ADN,
+  `LESSONS.md` et catégories ne sont jamais touchés.
+- Le script de mise à jour définit `DIP_HOME` (Claude Code trouve `dip-review`, `dip-assets`… depuis n'importe
+  quel dossier) et installe le navigateur des outils en ligne de commande.
+- Nouvelle page **Guide** dans le tableau de bord (accessible même sans bibliothèque) et tutoriel complet
+  `docs/TUTORIEL.md`.
+
 ## v0.3.1 — Mises à jour en une commande
 - Le tableau de bord et le panneau signalent quand une nouvelle version est publiée (bandeau « disponible »,
   bouton **Copier la commande**, bouton **Recharger DIP**, lien vers les nouveautés).

@@ -1,6 +1,6 @@
 // DIP Studio — full-page dashboard: library folder, scans, measured animations, suggestions, creation commands.
 import { getRoot, pickRoot, access, fsAdapter, readBlob, savePack, removePack, writeFile, saveFocus } from './lib/workspace.js';
-import { categoryCoverage, listFocus, listPacks, writeIndex, effectsByType, rankReferences, librarySuggestions, libraryStats, words, versionLess, libraryPatterns } from './lib/library.js';
+import { categoryCoverage, listFocus, listPacks, writeIndex, syncLibrary, effectsByType, rankReferences, librarySuggestions, libraryStats, words, versionLess, libraryPatterns } from './lib/library.js';
 import { ANALYZER_VERSION } from './lib/analyzer.js';
 import { SECTORS, STYLES, TECHNIQUES, SOURCES, label as catLabel } from './lib/categories.js';
 import { buildPackFiles, packName } from './lib/pack.js';
@@ -14,7 +14,7 @@ import { EFFECT_TYPES } from './lib/taxonomy.js';
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => [...(el || document).querySelectorAll(s)];
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const TITLES = { overview: 'Vue d’ensemble', library: 'Bibliothèque', collect: 'Collecte', sites: 'Sites construits', motion: 'Bibliothèque d’effets', create: 'Créer', settings: 'Réglages' };
+const TITLES = { overview: 'Vue d’ensemble', library: 'Bibliothèque', collect: 'Collecte', sites: 'Sites construits', motion: 'Bibliothèque d’effets', create: 'Créer', guide: 'Guide', settings: 'Réglages' };
 const TYPE_FR = {
   'text-reveal-lines': 'Révélation de texte (lignes)', 'text-reveal-words': 'Révélation de texte (mots)', 'text-reveal-chars': 'Révélation de texte (lettres)', 'text-scramble': 'Texte brouillé',
   'fade-up-reveal': 'Apparition en fondu', 'scale-reveal': 'Apparition à l’échelle', marquee: 'Défilement infini', 'image-reveal-clip': 'Révélation d’image (masque)', 'image-parallax': 'Parallaxe d’image',
@@ -155,6 +155,7 @@ async function loadWorkspace(interactive) {
     banner.innerHTML = `<span>Chrome demande à nouveau l’accès au dossier « ${esc(state.root.name)} ».</span><button class="primary" id="btn-regrant">Autoriser</button>`;
     $('#btn-regrant').onclick = async () => {
       await loadWorkspace(true);
+      await sync();
       await refresh();
     };
   } else banner.hidden = true;
@@ -192,11 +193,11 @@ function go(page) {
 window.addEventListener('hashchange', () => go(location.hash.slice(1)));
 
 function render() {
-  const needFolder = !state.root && state.page !== 'settings';
+  const needFolder = !state.root && !['settings', 'guide'].includes(state.page);
   $('#page-empty').hidden = !needFolder;
   for (const p of Object.keys(TITLES)) $('#page-' + p).hidden = needFolder || p !== state.page;
   if (needFolder) return;
-  ({ overview: renderOverview, library: renderLibrary, collect: renderCollect, sites: renderSites, motion: renderMotion, create: renderCreate, settings: () => {} })[state.page]();
+  ({ overview: renderOverview, library: renderLibrary, collect: renderCollect, sites: renderSites, motion: renderMotion, create: renderCreate, guide: () => {}, settings: () => {} })[state.page]();
 }
 
 // ------------------------------------------------------------------ cards
@@ -863,6 +864,8 @@ $('#ws-btn').onclick = () => (state.root && state.access !== 'granted' ? loadWor
 $('#btn-pick').onclick = choose;
 $('#set-pick').onclick = choose;
 $('#btn-pick-help').onclick = () => ($('#pick-help').hidden = !$('#pick-help').hidden);
+$('#g-upd').textContent = UPDATE_CMD;
+$('#g-upd-copy').onclick = () => copy(UPDATE_CMD);
 $('#set-upd').onclick = async () => {
   const u = await showUpdate(true);
   toast(!u ? 'Vérification impossible (hors ligne ?)' : u.available ? `${u.tag} disponible` : `DIP est à jour (v${u.current})`);
@@ -884,6 +887,12 @@ $$('.seg', $('#lib-filters')).forEach(
 );
 // scans saved from the side panel appear without reloading
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && ready() && refresh());
+
+// new DIP version → refresh the /dip-* commands, skills and QUALITY_RULES in the library folder
+async function sync() {
+  if (!ready()) return;
+  if (await syncLibrary(fsAdapter(state.root)).catch(() => false)) toast('Bibliothèque mise à jour : commandes Claude Code, skills et règles');
+}
 
 async function showUpdate(force) {
   const u = await checkUpdate(force).catch(() => null);
@@ -915,6 +924,7 @@ async function showUpdate(force) {
     /* not in an extension page (tests) */
   }
   await loadWorkspace(false);
+  await sync();
   go(location.hash.slice(1) || 'overview');
   await refresh();
 })();

@@ -6,6 +6,7 @@
 import { COMMANDS, QUALITY_RULES } from './commands.js';
 import { SKILLS } from './skills.js';
 import { EFFECT_TYPES } from './taxonomy.js';
+import { DIP_VERSION } from './pack.js';
 import { classify, SECTORS, STYLES, TECHNIQUES, label as catLabel, normaliseSector, normaliseStyle } from './categories.js';
 
 const domainOf = (u) => {
@@ -135,11 +136,24 @@ export function effectsMd(packs) {
   return g.join('\n');
 }
 
+// After a DIP update the commands, skills and rules in the library are stale: rewrite them once.
+export async function syncLibrary(fsa) {
+  let idx = null;
+  try {
+    idx = JSON.parse((await fsa.readText('index.json')) || 'null');
+  } catch (e) {
+    /* unreadable index: rebuild */
+  }
+  if (idx && idx.dipVersion === DIP_VERSION) return false;
+  await writeIndex(fsa);
+  return true;
+}
+
 // Rebuild the indexes and (re)write the Claude Code commands at the library root.
 export async function writeIndex(fsa) {
   const packs = await listPacks(fsa);
   const slim = packs.map(({ effects, ...p }) => ({ ...p, effects: effects.map(({ preview, curve, ...e }) => e) }));
-  await fsa.writeText('index.json', JSON.stringify({ generator: 'DIP library', updated: new Date().toISOString(), packs: slim }, null, 2));
+  await fsa.writeText('index.json', JSON.stringify({ generator: 'DIP library', dipVersion: DIP_VERSION, updated: new Date().toISOString(), packs: slim }, null, 2));
   await fsa.writeText('LIBRARY.md', libraryMd(packs));
   const focus = await listFocus(fsa);
   await fsa.writeText('EFFECTS.md', effectsMd(packs) + (focus.length ? '\n## Focused analyses (effects/)\n\n' + focus.map((f) => `- [${f.commonName ? f.commonName.fr : f.type}](${f.path}/EFFECT.md) — ${f.host}, ${f.type} / ${f.trigger || '?'}${f.completed ? ' · fiche complète' : ' · à compléter : \`/dip-effect ' + f.path + '\`'}`).join('\n') + '\n' : ''));

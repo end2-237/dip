@@ -63,6 +63,9 @@ folder and end BUILD_PLAN.md with the dip-review step. Build the site in sites/<
 10. Done means verified: `node <DIP>/cli/dip-review.js --url <local url> --out sites/<slug>/review --library <library>`
    scores ≥ 85, and every 🔴 item of REVIEW.md is fixed.
 
+<DIP> is the DIP install folder: env DIP_HOME (set by the update script; Windows default D:\DIP). Tools run from
+any folder: `node "$DIP_HOME/cli/dip-review.js" …` (PowerShell: `node "$env:DIP_HOME\cli\dip-review.js" …`).
+
 
 Originality rules: mix at least two references; never reuse their copy, images, fonts, 3D models or
 shader code; change palette and typography; keep only principles, rhythms and measured motion values.

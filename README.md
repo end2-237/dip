@@ -11,6 +11,8 @@ le site avec une fidélité mesurable.
 
 ---
 
+**Nouveau venu ? Commence par le [tutoriel](docs/TUTORIEL.md)** (aussi dans le tableau de bord → Guide).
+
 ## Installer et mettre à jour DIP (recommandé)
 
 Une seule commande dans PowerShell installe **ou met à jour** l'extension et les outils dans `D:\DIP` :

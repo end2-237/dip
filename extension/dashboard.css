@@ -233,3 +233,15 @@ label.check { flex-direction: row; align-items: center; gap: 8px; color: var(--f
 .banner.upd { border-color: rgba(154, 140, 255, .3); background: var(--violet-soft); color: var(--fg); }
 .banner.upd .acts { display: flex; gap: 6px; flex: none; }
 .banner.upd code { font-family: var(--mono); font-size: 10.5px; }
+
+/* guide */
+.guide { max-width: 680px; }
+.g-intro { font-size: 12.5px; line-height: 1.65; margin: 0 0 18px; }
+.g-step { display: grid; grid-template-columns: 34px 1fr; gap: 0 12px; padding: 16px 0; border-top: 1px solid var(--line); }
+.g-step h2 { font-size: 14px; margin: 0 0 4px; }
+.g-step p { font-size: 12px; line-height: 1.6; margin: 0; }
+.g-n { color: var(--muted); padding-top: 3px; }
+.g-cmd { display: flex; align-items: center; gap: 10px; margin: 8px 0 2px; padding: 8px 8px 8px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+.g-cmd .mono { flex: 1; overflow-x: auto; white-space: nowrap; color: var(--fg-2); }
+.g-foot { border-top: 1px solid var(--line); padding-top: 14px; }
+.g-step .link, .g-foot .link { font-size: inherit; color: var(--fg-2); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }

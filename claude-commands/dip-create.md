@@ -69,5 +69,8 @@ Steps:
 10. Done means verified: `node <DIP>/cli/dip-review.js --url <local url> --out sites/<slug>/review --library <library>`
    scores ≥ 85, and every 🔴 item of REVIEW.md is fixed.
 
+<DIP> is the DIP install folder: env DIP_HOME (set by the update script; Windows default D:\DIP). Tools run from
+any folder: `node "$DIP_HOME/cli/dip-review.js" …` (PowerShell: `node "$env:DIP_HOME\cli\dip-review.js" …`).
+
 Never copy texts, images, fonts, models or shader code from the library: borrow principles and measured
 motion values only. Ask the user to confirm the concept before writing the full production pack.
