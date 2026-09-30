@@ -124,10 +124,27 @@ ancienne version portent le badge « ancienne version » : **Bibliothèque → R
 versions** (ou « Redisséquer » dans la fiche d'un site). Une petite fenêtre s'ouvre pour chaque site ; garde
 le tableau de bord visible. L'ADN déjà écrit par Claude (`DESIGN_DNA.md`, `dna.json`) est conservé.
 
+## Qualité : ne pas refaire les mêmes erreurs
+
+- **`dip-review`** contrôle un site construit, sans référence : zones vides, blocs à moitié vides, menu fixe
+  qui passe sur le texte, hero figé après l'intro, sections sans animation, moments forts absents du
+  milieu de page, débordements et petites zones tactiles sur mobile, contenus « à confirmer », erreurs.
+  ```powershell
+  node cli/dip-review.js --url http://localhost:5173 --out sites/kalibre/review --library D:\DIP-Library
+  ```
+  Il écrit `REVIEW.md` (corrections par priorité, avec captures) et un score sur 100 (objectif ≥ 85).
+- Dans Claude Code (bibliothèque ouverte) : **`/dip-review sites/<projet>`** lance la revue, corrige, relance
+  (3 tours max) et ajoute les nouvelles erreurs à **`LESSONS.md`**, que `/dip-create` lit avant chaque projet.
+- **`QUALITY_RULES.md`** (racine de la bibliothèque et chaque pack de production) : les règles non négociables.
+- **`PATTERNS.md`** : ce que font les sites de ta bibliothèque, en chiffres (nombre de sections, enchaînements,
+  images et effets par rôle de section, rythme des décors, densité d'animation). `/dip-create` part de ces chiffres.
+- Tableau de bord → **Sites** : chaque site de `sites/` avec son aperçu, son score, ses points à corriger
+  (captures), son concept et les commandes à copier.
+
 ## Skills Claude Code
 
 La bibliothèque et chaque pack contiennent `.claude/skills/` ; Claude les utilise tout seul :
-`blender-web-3d` (objets 3D modélisés par script Blender, rendu d'aperçu, export `.glb`),
+`premium-qa` (contrôle qualité), `blender-web-3d` (objets 3D modélisés par script Blender, rendu d'aperçu, export `.glb`),
 `three-premium`, `motion-premium`, `art-direction`, `asset-pipeline`. Copie de référence : `claude-skills/`.
 
 ## Créer : bibliothèque, commandes Claude Code, images et 3D
@@ -148,6 +165,7 @@ commandes Claude Code. Ouvre Claude Code dans ce dossier (abonnement Claude, pas
 | `/dip-create <brief>` | concept original + pack de production à partir de la bibliothèque |
 | `/dip-transform <pack client> <packs référence>` | transforme un site ordinaire en projet premium |
 | `/dip-clone <url>` | boucle complète : capture → ADN → construction → vérification (3 essais max / section) |
+| `/dip-review sites/<projet>` | revue qualité du site construit, corrections, leçons pour les prochains projets |
 
 **Images et objets 3D originaux** (fal.ai, paiement à l'usage, sans abonnement ; clé dans une variable
 d'environnement, jamais dans un fichier ni dans un chat) :

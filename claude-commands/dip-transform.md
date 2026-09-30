@@ -27,6 +27,31 @@ Produce a folder production/<client-slug>/ containing:
    direction; reuse the client's own photos and logo when they are good enough. Production tools:
    `node <DIP>/cli/dip-assets.js image|model|optimize` (fal.ai, pay per use) or 3D rebuilt in code.
 
+Also read PATTERNS.md and LESSONS.md at the library root, copy QUALITY_RULES.md (below) into the production
+folder and end BUILD_PLAN.md with the dip-review step. Build the site in sites/<client-slug>/.
+
+# QUALITY RULES — non-negotiable for every page built with DIP
+
+1. The hero stays alive after its intro: the scene / visual keeps a slow motion and reacts to the pointer
+   and to the scroll. A title alone on a still background is not a hero.
+2. No dead zones: no area larger than 30 % of the viewport stays empty for more than half a screen of
+   scroll. Section heights follow their content; sticky / pinned scenes are filled at every step.
+3. No half-empty panels: a card or box is never taller than what it shows (demo boxes, script boxes…).
+4. The fixed header never sits on top of text: background or blur as soon as the page scrolls, or hide on
+   scroll down / show on scroll up. mix-blend-mode alone is not enough. Add scroll-margin-top to anchors.
+5. Motion is spread along the page: every section has at least one motion moment, and 2–4 signature
+   moments live in the middle of the page (pinned sequence, zoom-through, media expand, décor change,
+   moving image composition, 3D following the scroll) — not only in the intro and the footer.
+6. Numbers first: sections count, section order, images per section and effects per section start from
+   PATTERNS.md (library) and the measured values of EFFECTS.md; deviations are deliberate and explained.
+7. Mobile: no horizontal overflow, text ≥ 16 px (labels ≥ 11 px), touch targets ≥ 44 px, 3D degraded
+   gracefully.
+8. Content honesty: missing client facts stay visible as [à confirmer]; never invent testimonials,
+   clients, figures or awards.
+9. Done means verified: `node <DIP>/cli/dip-review.js --url <local url> --out sites/<slug>/review --library <library>`
+   scores ≥ 85, and every 🔴 item of REVIEW.md is fixed.
+
+
 Originality rules: mix at least two references; never reuse their copy, images, fonts, 3D models or
 shader code; change palette and typography; keep only principles, rhythms and measured motion values.
 Accessibility: contrast ≥ 4.5:1 for body text, prefers-reduced-motion fallbacks, keyboard menus.

@@ -73,6 +73,30 @@ test('dashboard: import packs, browse, prepare commands', { timeout: 180000 }, a
     assert.match(opfs.fx, /1\.2s, expo\.out, stagger 0\.08/);
     assert.match(opfs.brief, /Secteur : hotel/);
     assert.match(opfs.cmd, /\$ARGUMENTS/);
+    // built sites: sites/<slug>/ with a dip-review report
+    await page.evaluate(async () => {
+      const r = await navigator.storage.getDirectory();
+      const put = async (p, text) => {
+        const parts = p.split('/');
+        let d = r;
+        for (const x of parts.slice(0, -1)) d = await d.getDirectoryHandle(x, { create: true });
+        const w = await (await d.getFileHandle(parts[parts.length - 1], { create: true })).createWritable();
+        await w.write(text);
+        await w.close();
+      };
+      await put('sites/demo/package.json', '{"name":"demo"}');
+      await put('sites/demo/NOTES.md', '# NOTES demo');
+      await put('production/demo/BRIEF.md', '| Références | alpha-hotel.test · beta.test |');
+      await put('sites/demo/review/review.json', JSON.stringify({ score: 72, date: '2026-09-30T10:00:00Z', issues: [{ sev: 'high', area: 'header', msg: 'Le menu fixe passe par-dessus le texte', fix: 'fond au scroll', cost: 10 }] }));
+    });
+    await page.goto(page.url().replace(/#.*/, '#sites'));
+    await page.reload();
+    await page.waitForSelector('#sites-grid .card .score');
+    assert.equal((await page.textContent('#sites-grid .card .score')).trim(), '72');
+    await page.click('#sites-grid .card');
+    await page.waitForSelector('.issue');
+    assert.match(await page.textContent('#dr-body'), /\/dip-review sites\/demo/);
+    assert.match(await page.textContent('#dr-body'), /alpha-hotel\.test/);
     assert.deepEqual(errors, []);
   } finally {
     await ctx.close();

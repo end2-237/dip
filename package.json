@@ -8,7 +8,8 @@
     "dip-capture": "cli/dip-capture.js",
     "dip-verify": "cli/dip-verify.js",
     "dip-assets": "cli/dip-assets.js",
-    "dip-library": "cli/dip-library.js"
+    "dip-library": "cli/dip-library.js",
+    "dip-review": "cli/dip-review.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",
@@ -17,7 +18,8 @@
     "serve:fixtures": "node -e \"import('./cli/lib/serve.js').then(m=>m.serve('fixtures',5555)).then(s=>console.log(s.url))\"",
     "package:extension": "node scripts/package-extension.js",
     "assets": "node cli/dip-assets.js",
-    "library": "node cli/dip-library.js"
+    "library": "node cli/dip-library.js",
+    "review": "node cli/dip-review.js"
   },
   "engines": {
     "node": ">=20"

@@ -1,6 +1,6 @@
 // DIP Studio — full-page dashboard: library folder, scans, measured animations, suggestions, creation commands.
 import { getRoot, pickRoot, access, fsAdapter, readBlob, savePack, removePack, writeFile } from './lib/workspace.js';
-import { listPacks, writeIndex, effectsByType, rankReferences, librarySuggestions, libraryStats, words, versionLess } from './lib/library.js';
+import { listPacks, writeIndex, effectsByType, rankReferences, librarySuggestions, libraryStats, words, versionLess, libraryPatterns } from './lib/library.js';
 import { ANALYZER_VERSION } from './lib/analyzer.js';
 import { buildPackFiles, packName } from './lib/pack.js';
 import { dissectUrl, shareImage } from './lib/runner.js';
@@ -11,7 +11,7 @@ import { EFFECT_TYPES } from './lib/taxonomy.js';
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => [...(el || document).querySelectorAll(s)];
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const TITLES = { overview: 'Vue d’ensemble', library: 'Bibliothèque', motion: 'Bibliothèque d’effets', create: 'Créer', settings: 'Réglages' };
+const TITLES = { overview: 'Vue d’ensemble', library: 'Bibliothèque', sites: 'Sites construits', motion: 'Bibliothèque d’effets', create: 'Créer', settings: 'Réglages' };
 const TYPE_FR = {
   'text-reveal-lines': 'Révélation de texte (lignes)', 'text-reveal-words': 'Révélation de texte (mots)', 'text-reveal-chars': 'Révélation de texte (lettres)', 'text-scramble': 'Texte brouillé',
   'fade-up-reveal': 'Apparition en fondu', 'scale-reveal': 'Apparition à l’échelle', marquee: 'Défilement infini', 'image-reveal-clip': 'Révélation d’image (masque)', 'image-parallax': 'Parallaxe d’image',
@@ -27,7 +27,7 @@ const TYPE_FR = {
 const typeFr = (t) => TYPE_FR[t] || t;
 const TRIGGERS = { load: 'au chargement', 'scroll-enter': 'à l’entrée au scroll', 'scroll-scrub': 'lié au scroll', hover: 'au survol', press: 'appui long', 'mouse-move': 'à la souris', click: 'au clic', drag: 'glisser', 'time-loop': 'en boucle', 'route-change': 'changement de page' };
 
-const state = { root: null, access: 'none', packs: [], page: 'overview', libFilter: 'all', moTrigger: 'all', moType: 'all', mode: 'create', refs: new Set(), refsTouched: false, windowId: null };
+const state = { root: null, access: 'none', packs: [], sites: [], page: 'overview', libFilter: 'all', moTrigger: 'all', moType: 'all', mode: 'create', refs: new Set(), refsTouched: false, windowId: null };
 const thumbCache = new Map();
 
 // ------------------------------------------------------------------ helpers
@@ -159,6 +159,8 @@ async function loadWorkspace(interactive) {
 
 async function refresh() {
   state.packs = ready() ? await listPacks(fsAdapter(state.root)).catch(() => []) : [];
+  state.sites = ready() ? await listSites().catch(() => []) : [];
+  $('#nav-sites').textContent = state.sites.length || '';
   $('#nav-count').textContent = state.packs.length || '';
   render();
 }
@@ -190,7 +192,7 @@ function render() {
   $('#page-empty').hidden = !needFolder;
   for (const p of Object.keys(TITLES)) $('#page-' + p).hidden = needFolder || p !== state.page;
   if (needFolder) return;
-  ({ overview: renderOverview, library: renderLibrary, motion: renderMotion, create: renderCreate, settings: () => {} })[state.page]();
+  ({ overview: renderOverview, library: renderLibrary, sites: renderSites, motion: renderMotion, create: renderCreate, settings: () => {} })[state.page]();
 }
 
 // ------------------------------------------------------------------ cards
@@ -224,6 +226,11 @@ function renderOverview() {
   $('#tempo').innerHTML = `<dl class="kv">
     <dt>Durée typique</dt><dd>${s.medianDuration != null ? s.medianDuration + ' s' : '—'}</dd>
     <dt>Scroll (lerp moyen)</dt><dd>${s.lerp != null ? s.lerp : '—'}</dd>
+    ${(() => {
+      const pt = libraryPatterns(state.packs);
+      if (!pt.sites) return '';
+      return `<dt>Sections par page</dt><dd>${pt.sections.median}</dd><dt>Moments signature</dt><dd>${pt.density ? pt.density.signatureMoments : '—'}</dd><dt>Enchaînement fréquent</dt><dd class="small">${esc(pt.transitions[0] ? pt.transitions[0].pair : '—')}</dd>`;
+    })()}
     ${s.topEases.map(([e, n]) => `<dt class="mono">${esc(e === 'none' ? 'linear' : e)}</dt><dd>${n}×</dd>`).join('') || '<dt>Easings</dt><dd>—</dd>'}
   </dl>`;
   const recent = $('#recent');
@@ -293,6 +300,92 @@ function renderMotion() {
     el.onclick = () => openDoc(e.pack, `motion/effects/${e.id}.md`, typeFr(e.type) + ' — ' + e.id);
     grid.appendChild(el);
   }
+}
+
+// ------------------------------------------------------------------ built sites (sites/<slug>/)
+async function listSites() {
+  const fsa = fsAdapter(state.root);
+  const dirs = (await fsa.list('sites')).filter((d) => d.kind === 'directory');
+  const out = [];
+  for (const d of dirs) {
+    const base = 'sites/' + d.name;
+    const files = new Set((await fsa.list(base)).map((f) => f.name));
+    const rev = await fsa.readText(base + '/review/review.json').catch(() => null);
+    let review = null;
+    try {
+      review = rev ? JSON.parse(rev) : null;
+    } catch (e) {
+      review = null;
+    }
+    const prod = (await fsa.list('production/' + d.name)).map((f) => f.name);
+    const brief = prod.includes('BRIEF.md') ? await fsa.readText(`production/${d.name}/BRIEF.md`) : null;
+    const refs = brief ? [...new Set((brief.match(/[a-z0-9-]+\.(?:[a-z]{2,6})(?=[\s·,|)]|$)/gi) || []).filter((x) => !/\.(md|json|js|css|html)$/i.test(x)))].slice(0, 6) : [];
+    let mtime = null;
+    try {
+      const f = await readBlob(state.root, base + '/package.json');
+      mtime = f && f.lastModified;
+    } catch (e) {
+      /* ignore */
+    }
+    out.push({ name: d.name, path: base, files, review, production: prod, refs, hasNotes: files.has('NOTES.md'), mtime });
+  }
+  return out.sort((a, b) => (b.review ? Date.parse(b.review.date) : b.mtime || 0) - (a.review ? Date.parse(a.review.date) : a.mtime || 0));
+}
+const scoreClass = (s) => (s == null ? 'none' : s >= 85 ? 'good' : s >= 65 ? 'mid' : 'bad');
+function renderSites() {
+  const grid = $('#sites-grid');
+  grid.innerHTML = '';
+  if (!state.sites.length) {
+    grid.innerHTML = '<div class="empty-note">Aucun site dans <span class="mono">sites/</span> pour l’instant. Crée un projet dans « Créer » : Claude construit le site dans <span class="mono">sites/&lt;projet&gt;</span>.</div>';
+    return;
+  }
+  for (const st of state.sites) {
+    const el = document.createElement('article');
+    el.className = 'card';
+    const sc = st.review ? st.review.score : null;
+    const hi = st.review ? st.review.issues.filter((i) => i.sev === 'high').length : 0;
+    el.innerHTML = `<div class="thumb"><img alt=""><span class="score ${scoreClass(sc)}">${sc == null ? '—' : sc}</span></div>
+      <div class="card-b"><div class="card-t"><b>${esc(st.name)}</b><span>${st.review ? fmtDate(st.review.date) : st.mtime ? fmtDate(st.mtime) : ''}</span></div>
+      <div class="card-m"><span>${st.review ? `${st.review.issues.length} point(s) · ${hi} critique(s)` : 'pas encore de revue'}</span><span>${st.refs.length ? st.refs.length + ' réf.' : ''}</span></div></div>`;
+    if (st.review) lazyImg($('img', el), (async () => {
+      const b = await readBlob(state.root, st.path + '/review/cover.png');
+      return b ? URL.createObjectURL(b) : null;
+    })());
+    el.onclick = () => openSite(st);
+    grid.appendChild(el);
+  }
+}
+async function openSiteDoc(st, file, title) {
+  const text = await fsAdapter(state.root).readText(file);
+  drawer(`<span class="muted">${esc(st.name)} /</span> ${esc(title)}`, `<button class="ghost" id="dr-back" style="align-self:flex-start"><svg viewBox="0 0 16 16"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>Retour</button><div class="md">${text == null ? '<p class="muted">Fichier introuvable.</p>' : renderMd(text)}</div>`);
+  $('#dr-back').onclick = () => openSite(st);
+}
+function openSite(st) {
+  const r = st.review;
+  const docs = [
+    ...['CONCEPT.md', 'BRIEF.md', 'QUALITY_RULES.md', 'ASSETS.md', '3D.md', 'BUILD_PLAN.md'].filter((f) => st.production.includes(f)).map((f) => [`production/${st.name}/${f}`, f.replace('.md', '').replace('_', ' ').toLowerCase()]),
+    ...(st.hasNotes ? [[st.path + '/NOTES.md', 'notes']] : []),
+    ...(st.files.has('CREDITS.md') ? [[st.path + '/CREDITS.md', 'crédits']] : []),
+  ];
+  const cmdReview = `/dip-review ${st.path}`;
+  const cmdDev = `cd ${st.path}; npm install; npm run dev`;
+  drawer(
+    `${esc(st.name)} <span class="score ${scoreClass(r && r.score)}" style="position:static;margin-left:8px">${r ? r.score + ' / 100' : 'pas de revue'}</span>`,
+    `<div class="muted small">${st.refs.length ? 'Références : ' + st.refs.map(esc).join(' · ') : 'Références : voir le brief'}${r ? ' · revue du ' + fmtDate(r.date) : ''}</div>
+    <div class="dr-actions">${docs.map(([f, l]) => `<button data-sdoc="${esc(f)}">${esc(l.charAt(0).toUpperCase() + l.slice(1))}</button>`).join('')}</div>
+    <div><div class="label" style="margin-bottom:6px">Commandes</div>
+      <div class="sugg" style="padding:0;border:0"><span class="ic create"></span><div>Lancer le site en local (PowerShell)</div><div class="cmdline"><code>${esc(cmdDev)}</code><button class="icon" data-c="dev" title="Copier"><svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.8c0-.7.6-1.3 1.3-1.3H10"/></svg></button></div></div>
+      <div class="sugg" style="padding:10px 0 0;border:0"><span class="ic dna"></span><div>Revue qualité + corrections par Claude Code (dans la bibliothèque)</div><div class="cmdline"><code>${esc(cmdReview)}</code><button class="icon" data-c="rev" title="Copier"><svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.8c0-.7.6-1.3 1.3-1.3H10"/></svg></button></div></div>
+    </div>
+    ${r ? `<div><div class="label" style="margin-bottom:6px">Revue qualité — ${r.issues.length} point(s)</div><div class="issues">${r.issues.map((i) => `<div class="issue"><span>${{ high: '🔴', medium: '🟠', low: '🟡', info: 'ℹ️' }[i.sev] || ''}</span><div>${esc(i.msg)}</div>${i.fix ? `<div class="fix">→ ${esc(i.fix)}</div>` : ''}${i.shot ? `<img data-shot="${esc(i.shot)}" alt="">` : ''}</div>`).join('') || '<div class="muted">Rien à signaler.</div>'}</div></div>` : '<p class="hint">Pas encore de revue : copie la commande <span class="mono">/dip-review</span> ci-dessus dans Claude Code.</p>'}`
+  );
+  $$('[data-sdoc]').forEach((b) => (b.onclick = () => openSiteDoc(st, b.dataset.sdoc, b.textContent)));
+  $('[data-c="dev"]').onclick = () => copy(cmdDev);
+  $('[data-c="rev"]').onclick = () => copy(cmdReview);
+  $$('[data-shot]').forEach((img) => lazyImg(img, (async () => {
+    const b = await readBlob(state.root, `${st.path}/review/${img.dataset.shot}`);
+    return b ? URL.createObjectURL(b) : null;
+  })()));
 }
 
 // ------------------------------------------------------------------ drawer

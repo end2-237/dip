@@ -1,6 +1,30 @@
 // Claude Code commands shipped with every pack (and in /claude-commands of the repo).
 // They run inside Claude Code, i.e. on the user's Claude subscription — no API key needed.
 
+// Quality rules learned from reviewing real builds (kalibre, first DIP creation). Every creation command
+// copies them into the production pack; /dip-review appends new lessons to LESSONS.md in the library.
+export const QUALITY_RULES = `# QUALITY RULES — non-negotiable for every page built with DIP
+
+1. The hero stays alive after its intro: the scene / visual keeps a slow motion and reacts to the pointer
+   and to the scroll. A title alone on a still background is not a hero.
+2. No dead zones: no area larger than 30 % of the viewport stays empty for more than half a screen of
+   scroll. Section heights follow their content; sticky / pinned scenes are filled at every step.
+3. No half-empty panels: a card or box is never taller than what it shows (demo boxes, script boxes…).
+4. The fixed header never sits on top of text: background or blur as soon as the page scrolls, or hide on
+   scroll down / show on scroll up. mix-blend-mode alone is not enough. Add scroll-margin-top to anchors.
+5. Motion is spread along the page: every section has at least one motion moment, and 2–4 signature
+   moments live in the middle of the page (pinned sequence, zoom-through, media expand, décor change,
+   moving image composition, 3D following the scroll) — not only in the intro and the footer.
+6. Numbers first: sections count, section order, images per section and effects per section start from
+   PATTERNS.md (library) and the measured values of EFFECTS.md; deviations are deliberate and explained.
+7. Mobile: no horizontal overflow, text ≥ 16 px (labels ≥ 11 px), touch targets ≥ 44 px, 3D degraded
+   gracefully.
+8. Content honesty: missing client facts stay visible as [à confirmer]; never invent testimonials,
+   clients, figures or awards.
+9. Done means verified: \`node <DIP>/cli/dip-review.js --url <local url> --out sites/<slug>/review --library <library>\`
+   scores ≥ 85, and every 🔴 item of REVIEW.md is fixed.
+`;
+
 export const DIP_DNA = `---
 description: Write the design DNA (art direction + production rules) of one or more DIP packs
 argument-hint: [pack folder ...]
@@ -79,6 +103,11 @@ Produce a folder production/<client-slug>/ containing:
    direction; reuse the client's own photos and logo when they are good enough. Production tools:
    \`node <DIP>/cli/dip-assets.js image|model|optimize\` (fal.ai, pay per use) or 3D rebuilt in code.
 
+Also read PATTERNS.md and LESSONS.md at the library root, copy QUALITY_RULES.md (below) into the production
+folder and end BUILD_PLAN.md with the dip-review step. Build the site in sites/<client-slug>/.
+
+${QUALITY_RULES}
+
 Originality rules: mix at least two references; never reuse their copy, images, fonts, 3D models or
 shader code; change palette and typography; keep only principles, rhythms and measured motion values.
 Accessibility: contrast ≥ 4.5:1 for body text, prefers-reduced-motion fallbacks, keyboard menus.
@@ -95,6 +124,8 @@ and a LIBRARY folder containing DIP packs (each with manifest.json, DESIGN_DNA.m
 motion/effects/). If a pack has no DNA yet, apply .claude/commands/dip-dna.md to it first.
 
 Steps:
+0. Read PATTERNS.md (numbers: sections, order, images and effects per section role, décor rhythm, motion
+   density) and LESSONS.md (mistakes of previous builds that must not come back) at the library root.
 1. Search the library: start with LIBRARY.md, EFFECTS.md and index.json at the library root (built by
    \`node <DIP>/cli/dip-library.js index\`), then read the dna.json of candidates; shortlist 3–5 packs whose
    register, sectors and signature effects fit the brief. Explain the shortlist in a table (why each fits,
@@ -115,8 +146,12 @@ Steps:
    \`node <DIP>/cli/dip-assets.js image --prompt "…" --size WxH --out public/img/<name>.webp\` or free stock;
    then \`dip-assets optimize\`. Estimate the cost (≈ $0.03 per image, ≈ $0.05–1.50 per 3D model).
 7. Output a production pack in production/<project-slug>/ with BRIEF.md, CONCEPT.md, design/, structure/,
-   motion/, 3D.md (if any), ASSETS.md, BUILD_PLAN.md and AGENT_RULES.md in the DIP format, ready for Claude Code.
+   motion/, 3D.md (if any), ASSETS.md, BUILD_PLAN.md, AGENT_RULES.md and QUALITY_RULES.md (copy the block
+   below) in the DIP format, ready for Claude Code. The section plan states, per section, its role, height
+   (vh), number and placement of images and its motion moments, citing the PATTERNS.md line it follows.
+   BUILD_PLAN.md builds the site in sites/<project-slug>/ and ends with the dip-review step.
 
+${QUALITY_RULES}
 Never copy texts, images, fonts, models or shader code from the library: borrow principles and measured
 motion values only. Ask the user to confirm the concept before writing the full production pack.
 `;
@@ -151,7 +186,26 @@ Rules: the clone stays private (study). Every value comes from the pack; mark gu
 Report progress in one short line per step.
 `;
 
+export const DIP_REVIEW = `---
+description: Review a site built with DIP (dead zones, header over text, static hero, sections without motion, mobile) and fix it until the score is ≥ 85
+argument-hint: <site folder in sites/> [local url]
+---
+Site to review: $ARGUMENTS (default: the only folder in sites/). Work from the library root.
+
+1. Start the site (npm install once, then npm run dev) and note its local URL.
+2. Run \`node <DIP>/cli/dip-review.js --url <url> --out sites/<slug>/review --library .\` (DIP folder: env DIP_HOME,
+   or ask once). Read sites/<slug>/review/REVIEW.md and LOOK at every screenshot it lists.
+3. Fix the items in order (🔴 first), following QUALITY_RULES.md of the production pack and the measured values
+   of PATTERNS.md / EFFECTS.md. Keep the concept and the art direction; do not rewrite what works.
+4. Re-run dip-review. At most 3 rounds; stop earlier at ≥ 85 with no 🔴 left.
+5. Append to LESSONS.md at the library root one line per NEW kind of mistake you fixed, written as a rule for
+   future builds (e.g. "Script/demo boxes: height follows the content, never a fixed 60vh"). Keep the file short:
+   merge with existing lines instead of repeating them.
+6. Update sites/<slug>/NOTES.md: score before → after, what changed, what is still missing (client content).
+`;
+
 export const COMMANDS = {
+  'dip-review.md': DIP_REVIEW,
   'dip-clone.md': DIP_CLONE,
   'dip-dna.md': DIP_DNA,
   'dip-transform.md': DIP_TRANSFORM,

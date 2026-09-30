@@ -9,6 +9,8 @@ and a LIBRARY folder containing DIP packs (each with manifest.json, DESIGN_DNA.m
 motion/effects/). If a pack has no DNA yet, apply .claude/commands/dip-dna.md to it first.
 
 Steps:
+0. Read PATTERNS.md (numbers: sections, order, images and effects per section role, décor rhythm, motion
+   density) and LESSONS.md (mistakes of previous builds that must not come back) at the library root.
 1. Search the library: start with LIBRARY.md, EFFECTS.md and index.json at the library root (built by
    `node <DIP>/cli/dip-library.js index`), then read the dna.json of candidates; shortlist 3–5 packs whose
    register, sectors and signature effects fit the brief. Explain the shortlist in a table (why each fits,
@@ -29,7 +31,31 @@ Steps:
    `node <DIP>/cli/dip-assets.js image --prompt "…" --size WxH --out public/img/<name>.webp` or free stock;
    then `dip-assets optimize`. Estimate the cost (≈ $0.03 per image, ≈ $0.05–1.50 per 3D model).
 7. Output a production pack in production/<project-slug>/ with BRIEF.md, CONCEPT.md, design/, structure/,
-   motion/, 3D.md (if any), ASSETS.md, BUILD_PLAN.md and AGENT_RULES.md in the DIP format, ready for Claude Code.
+   motion/, 3D.md (if any), ASSETS.md, BUILD_PLAN.md, AGENT_RULES.md and QUALITY_RULES.md (copy the block
+   below) in the DIP format, ready for Claude Code. The section plan states, per section, its role, height
+   (vh), number and placement of images and its motion moments, citing the PATTERNS.md line it follows.
+   BUILD_PLAN.md builds the site in sites/<project-slug>/ and ends with the dip-review step.
+
+# QUALITY RULES — non-negotiable for every page built with DIP
+
+1. The hero stays alive after its intro: the scene / visual keeps a slow motion and reacts to the pointer
+   and to the scroll. A title alone on a still background is not a hero.
+2. No dead zones: no area larger than 30 % of the viewport stays empty for more than half a screen of
+   scroll. Section heights follow their content; sticky / pinned scenes are filled at every step.
+3. No half-empty panels: a card or box is never taller than what it shows (demo boxes, script boxes…).
+4. The fixed header never sits on top of text: background or blur as soon as the page scrolls, or hide on
+   scroll down / show on scroll up. mix-blend-mode alone is not enough. Add scroll-margin-top to anchors.
+5. Motion is spread along the page: every section has at least one motion moment, and 2–4 signature
+   moments live in the middle of the page (pinned sequence, zoom-through, media expand, décor change,
+   moving image composition, 3D following the scroll) — not only in the intro and the footer.
+6. Numbers first: sections count, section order, images per section and effects per section start from
+   PATTERNS.md (library) and the measured values of EFFECTS.md; deviations are deliberate and explained.
+7. Mobile: no horizontal overflow, text ≥ 16 px (labels ≥ 11 px), touch targets ≥ 44 px, 3D degraded
+   gracefully.
+8. Content honesty: missing client facts stay visible as [à confirmer]; never invent testimonials,
+   clients, figures or awards.
+9. Done means verified: `node <DIP>/cli/dip-review.js --url <local url> --out sites/<slug>/review --library <library>`
+   scores ≥ 85, and every 🔴 item of REVIEW.md is fixed.
 
 Never copy texts, images, fonts, models or shader code from the library: borrow principles and measured
 motion values only. Ask the user to confirm the concept before writing the full production pack.
