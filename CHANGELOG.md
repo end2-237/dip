@@ -10,6 +10,14 @@ et une section ici, puis pousser sur `main`. Le zip de l'extension est joint à 
 La **version de l'analyseur** (affichée dans Réglages) décide du badge « ancienne version » des sites de la
 bibliothèque : elle ne change que lorsqu'une redissection apporte vraiment de nouvelles mesures.
 
+## v0.3.1 — Mises à jour en une commande
+- Le tableau de bord et le panneau signalent quand une nouvelle version est publiée (bandeau « disponible »,
+  bouton **Copier la commande**, bouton **Recharger DIP**, lien vers les nouveautés).
+- `scripts/update-dip.ps1` : met à jour l'extension et les outils dans `D:\DIP` en une commande PowerShell :
+  `irm https://raw.githubusercontent.com/end2-237/dip/main/scripts/update-dip.ps1 | iex`
+  (garde `node_modules`, relance `npm install`, affiche la version installée).
+- Réglages → Version de DIP → **Vérifier**.
+
 ## v0.3.0 — Qualité, analyse ciblée, catégories (analyseur 0.2.0)
 - **Catégories d'inspiration** : secteur, style, techniques ; filtres, correction manuelle, favoris,
   chiffres par secteur dans `PATTERNS.md`, références choisies par secteur et style.

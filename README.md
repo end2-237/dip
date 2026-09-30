@@ -11,6 +11,19 @@ le site avec une fidélité mesurable.
 
 ---
 
+## Installer et mettre à jour DIP (recommandé)
+
+Une seule commande dans PowerShell installe **ou met à jour** l'extension et les outils dans `D:\DIP` :
+
+```powershell
+irm https://raw.githubusercontent.com/end2-237/dip/main/scripts/update-dip.ps1 | iex
+```
+
+La première fois : `chrome://extensions` → Mode développeur → **Charger l'extension non empaquetée** →
+`D:\DIP\extension`. Ensuite, quand le tableau de bord affiche « nouvelle version disponible », relance la
+commande puis clique **Recharger DIP**. Autre dossier : `$env:DIP_HOME = "E:\Outils\DIP"` avant la commande.
+Chaque version est aussi publiée dans l'onglet **Releases** du dépôt (zip de l'extension joint).
+
 ## Installer l'extension (2 minutes)
 
 1. Récupère le dossier du dépôt (`git clone` ou « Download ZIP » puis dézippe).
@@ -224,7 +237,7 @@ sur mesure exportées en `.glb` d'étude dans `webgl/geometry/`).
 ```bash
 npm test                         # tests unitaires + scan des fixtures (Playwright)
 npm run serve:fixtures           # sert fixtures/ sur http://127.0.0.1:5555
-npm run package:extension        # crée dist/dip-extension-0.3.0.zip (partage / Chrome Web Store)
+npm run package:extension        # crée dist/dip-extension-0.3.1.zip (partage / Chrome Web Store)
 ```
 
 - `extension/probes/probes.js` : sondes injectées dans la page (MAIN world, `document_start`).

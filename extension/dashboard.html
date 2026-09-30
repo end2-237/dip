@@ -43,6 +43,7 @@
   </header>
 
   <div id="banner" class="banner" hidden></div>
+  <div id="update" class="banner upd" hidden></div>
   <div id="job" class="job" hidden><div class="job-t"><span id="job-title"></span><span id="job-pct" class="mono"></span></div><div class="job-bar"><i id="job-bar"></i></div><div class="job-s muted small" id="job-step"></div></div>
 
   <!-- empty state: no folder -->
@@ -198,7 +199,7 @@
       <div class="set-row"><div><div class="set-t">Dossier de la bibliothèque</div><div class="muted small" id="set-folder">—</div></div><button id="set-pick">Changer</button></div>
       <div class="set-row"><div><div class="set-t">Reconstruire l’index</div><div class="muted small">LIBRARY.md, EFFECTS.md, index.json et les commandes Claude Code.</div></div><button id="set-reindex">Reconstruire</button></div>
       <div class="set-row"><div><div class="set-t">Images et objets 3D</div><div class="muted small">Génération à l’unité avec <span class="mono">dip-assets</span> (fal.ai) : ≈ 0,03 $ l’image, 0,05–1,50 $ l’objet 3D. La clé se met dans une variable d’environnement, jamais ici.</div></div></div>
-      <div class="set-row"><div><div class="set-t">Version de DIP</div><div class="muted small">Extension <span class="mono" id="set-version"></span> · analyseur <span class="mono" id="set-analyzer"></span>. Historique : CHANGELOG.md du dépôt, versions (tags) sur GitHub.</div></div></div>
+      <div class="set-row"><div><div class="set-t">Version de DIP</div><div class="muted small">Extension <span class="mono" id="set-version"></span> · analyseur <span class="mono" id="set-analyzer"></span>. Mise à jour : <span class="mono">irm https://raw.githubusercontent.com/end2-237/dip/main/scripts/update-dip.ps1 | iex</span> dans PowerShell.</div></div><button id="set-upd">Vérifier</button></div>
       <div class="set-row"><div><div class="set-t">Structure du dossier</div><div class="muted small mono">packs/ · briefs/ · production/ · LIBRARY.md · EFFECTS.md · .claude/commands/</div></div></div>
     </div>
   </section>

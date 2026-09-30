@@ -7,6 +7,7 @@ import { buildPackFiles, packName } from './lib/pack.js';
 import { dissectUrl, shareImage, focusUrl } from './lib/runner.js';
 import { analyzeFocus, focusFiles } from './lib/focus.js';
 import { stepLabel } from './lib/i18n.js';
+import { checkUpdate, UPDATE_CMD } from './lib/update.js';
 import { readPackZip } from './lib/unzip-web.js';
 import { EFFECT_TYPES } from './lib/taxonomy.js';
 
@@ -862,6 +863,10 @@ $('#ws-btn').onclick = () => (state.root && state.access !== 'granted' ? loadWor
 $('#btn-pick').onclick = choose;
 $('#set-pick').onclick = choose;
 $('#btn-pick-help').onclick = () => ($('#pick-help').hidden = !$('#pick-help').hidden);
+$('#set-upd').onclick = async () => {
+  const u = await showUpdate(true);
+  toast(!u ? 'Vérification impossible (hors ligne ?)' : u.available ? `${u.tag} disponible` : `DIP est à jour (v${u.current})`);
+};
 $('#set-reindex').onclick = async () => {
   if (!ready()) return toast('Choisis d’abord un dossier');
   await writeIndex(fsAdapter(state.root));
@@ -880,6 +885,20 @@ $$('.seg', $('#lib-filters')).forEach(
 // scans saved from the side panel appear without reloading
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && ready() && refresh());
 
+async function showUpdate(force) {
+  const u = await checkUpdate(force).catch(() => null);
+  const el = $('#update');
+  if (!u || !u.available) {
+    el.hidden = true;
+    return u;
+  }
+  el.hidden = false;
+  el.innerHTML = `<span><b>${esc(u.name || u.tag)}</b> est disponible (tu as la v${esc(u.current)}). Colle la commande dans PowerShell, puis recharge DIP.</span><span class="acts"><button id="upd-copy" class="primary">Copier la commande</button><button id="upd-reload">Recharger DIP</button><a class="link" href="${esc(u.url)}" target="_blank" rel="noopener">Nouveautés ↗</a></span>`;
+  $('#upd-copy').onclick = () => copy(UPDATE_CMD);
+  $('#upd-reload').onclick = () => chrome.runtime.reload();
+  return u;
+}
+
 (async function init() {
   try {
     const v = 'v' + chrome.runtime.getManifest().version;
@@ -889,6 +908,7 @@ document.addEventListener('visibilitychange', () => document.visibilityState ===
     /* tests outside the extension */
   }
   $('#set-analyzer').textContent = ANALYZER_VERSION;
+  showUpdate(false);
   try {
     state.windowId = (await chrome.windows.getCurrent()).id;
   } catch (e) {

@@ -2,6 +2,7 @@
 import { bytesToB64 } from './lib/std-driver.js';
 import { dissectTab, shareImage, focusTab } from './lib/runner.js';
 import { analyzeFocus, focusFiles } from './lib/focus.js';
+import { checkUpdate } from './lib/update.js';
 import { buildPackZip, buildPackFiles, packName } from './lib/pack.js';
 import { getRoot, access, savePack, saveFocus } from './lib/workspace.js';
 import { synthesize } from './lib/llm.js';
@@ -346,6 +347,9 @@ chrome.debugger.onDetach.addListener((src, reason) => {
   syncForm();
   $('#onboarding').hidden = !!settings.onboarded;
   await refreshTab();
+  checkUpdate(false).then((u) => {
+    if (u && u.available && !busy && !$('#message').textContent) message(`${u.name || u.tag} disponible — ouvre le tableau de bord (▦) pour mettre DIP à jour.`, 'ok');
+  }).catch(() => {});
   const last = await loadScan('last').catch(() => null);
   if (last && last.cap) {
     current = last;

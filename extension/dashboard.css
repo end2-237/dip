@@ -229,3 +229,7 @@ label.check { flex-direction: row; align-items: center; gap: 8px; color: var(--f
 .src span { color: var(--muted); font-size: 11px; text-align: right; }
 .bar-mini { height: 4px; border-radius: 2px; background: rgba(255,255,255,.06); overflow: hidden; margin-top: 4px; }
 .bar-mini i { display: block; height: 100%; background: var(--fg-2); }
+
+.banner.upd { border-color: rgba(154, 140, 255, .3); background: var(--violet-soft); color: var(--fg); }
+.banner.upd .acts { display: flex; gap: 6px; flex: none; }
+.banner.upd code { font-family: var(--mono); font-size: 10.5px; }
