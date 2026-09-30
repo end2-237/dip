@@ -262,7 +262,8 @@ export async function runScan(driver, meta, options, onProgress) {
   // ---------------------------------------------------------------- 6. hover sweep
   progress(7, 'hover', 55);
   if (driver.capabilities.trustedInput) {
-    await step('hover-sweep', 150000, async () => {
+    // ~6 s per element (approach, magnetic probe, title traversal, before/after shots)
+    await step('hover-sweep', Math.max(150000, 20000 + o.maxHovers * 6500), async () => {
       await call('mark', 'hover');
       const items = (await call('listInteractive', o.maxHovers)) || [];
       let shots = 0;

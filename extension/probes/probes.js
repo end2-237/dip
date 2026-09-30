@@ -1525,7 +1525,8 @@
     }
     const used = new Map();
     return merged.slice(0, 40).map((x, i) => {
-      let name = sectionName(x.el, i, x.top, x.h) || 'section';
+      // sites built from a DIP pack already carry ids like "s01-hero": keep the name, not the old index
+      let name = (sectionName(x.el, i, x.top, x.h) || 'section').replace(/^s\d{1,2}-/, '') || 'section';
       const n = (used.get(name) || 0) + 1;
       used.set(name, n);
       if (n > 1) name += '-' + n;

@@ -733,8 +733,8 @@ function classify(e, ctx) {
   if (/drawsvg|strokedashoffset|stroke-dashoffset/.test(propsStr)) return 'svg-path-draw';
   if (/morphsvg/.test(propsStr)) return 'morph-svg';
   if (/scrambletext/.test(propsStr)) return 'text-scramble';
-  if (split && e.trigger !== 'hover') return split.type === 'chars' ? 'text-reveal-chars' : split.type === 'words' ? 'text-reveal-words' : 'text-reveal-lines';
-  if (/\.(lines?|words?|chars?|split[\w-]*)\b/.test(tSels) && /ypercent|"y"|translatey|opacity/.test(propsStr) && e.trigger !== 'hover') {
+  if (split && e.trigger !== 'hover' && e.trigger !== 'time-loop') return split.type === 'chars' ? 'text-reveal-chars' : split.type === 'words' ? 'text-reveal-words' : 'text-reveal-lines';
+  if (/\.(lines?|words?|chars?|split[\w-]*)\b/.test(tSels) && /ypercent|"y"|translatey|opacity/.test(propsStr) && e.trigger !== 'hover' && e.trigger !== 'time-loop') {
     return /\.chars?\b/.test(tSels) ? 'text-reveal-chars' : /\.words?\b/.test(tSels) ? 'text-reveal-words' : 'text-reveal-lines';
   }
   const m = e._m && e._m[0];
