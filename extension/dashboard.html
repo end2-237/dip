@@ -21,6 +21,7 @@
     <a href="#library" data-page="library"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/></svg><span>Bibliothèque</span><em id="nav-count"></em></a>
     <a href="#sites" data-page="sites"><svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 6h12M4.5 4.5h.01M6.5 4.5h.01"/></svg><span>Sites</span><em id="nav-sites"></em></a>
     <a href="#motion" data-page="motion"><svg viewBox="0 0 16 16"><path d="M2 11c2.5 0 3-6 6-6s3.5 6 6 6"/></svg><span>Effets</span></a>
+    <a href="#collect" data-page="collect"><svg viewBox="0 0 16 16"><path d="M3 4.5h10M3 8h10M3 11.5h6"/><path d="m11 11.5 1.5 1.5 2.5-3"/></svg><span>Collecte</span></a>
     <a href="#create" data-page="create"><svg viewBox="0 0 16 16"><path d="M8 2.5v11M2.5 8h11"/></svg><span>Créer</span></a>
     <a href="#settings" data-page="settings"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M3.6 12.4l1.3-1.3M11.1 4.9l1.3-1.3"/></svg><span>Réglages</span></a>
   </nav>
@@ -88,6 +89,11 @@
       <span class="grow"></span>
       <button class="ghost" id="btn-redissect-all" hidden><svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3"/></svg><span></span></button>
     </div>
+    <div class="cats">
+      <div class="cat-row"><span class="label">Secteur</span><div class="filters" id="cat-sector"></div></div>
+      <div class="cat-row"><span class="label">Style</span><div class="filters" id="cat-style"></div></div>
+      <div class="cat-row"><span class="label">Technique</span><div class="filters" id="cat-tech"></div></div>
+    </div>
     <div id="lib-grid" class="grid"></div>
   </section>
 
@@ -105,6 +111,31 @@
     <div class="filters" id="mo-types"></div>
     <div class="filters" id="mo-filters"></div>
     <div id="mo-list" class="fxgrid"></div>
+  </section>
+
+  <section id="page-collect" class="page" hidden>
+    <div class="create">
+      <form class="panel form" id="col-form" autocomplete="off">
+        <div>
+          <h3>Sites à scanner</h3>
+          <p class="hint" style="margin-top:4px">Colle une adresse par ligne. DIP les scanne l’un après l’autre dans une petite fenêtre (3 à 6 minutes par site) et les range dans la bibliothèque. Garde ce tableau de bord visible.</p>
+        </div>
+        <textarea id="col-urls" rows="8" placeholder="https://site-premium-1.com&#10;https://site-premium-2.com"></textarea>
+        <div class="grid2">
+          <label>Secteur (facultatif)<select id="col-sector"><option value="">Détection automatique</option></select></label>
+          <label>Largeurs d’écran<select id="col-bps"><option value="1440,390">1440 + mobile (recommandé)</option><option value="1440">1440 seulement (rapide)</option><option value="1440,1024,390">1440 + 1024 + mobile (complet)</option></select></label>
+        </div>
+        <div><span class="label">Style (facultatif)</span><div class="filters" id="col-styles" style="margin-top:8px"></div></div>
+        <label class="row check"><input type="checkbox" id="col-skip" checked> Ignorer les sites déjà dans la bibliothèque</label>
+        <div class="row gap end"><span class="muted small" id="col-count"></span><button type="submit" class="primary" id="col-go">Lancer la collecte</button></div>
+      </form>
+      <aside class="panel out">
+        <div class="label">Où trouver des sites premium</div>
+        <div id="col-sources" class="list"></div>
+        <div class="label" style="margin-top:8px">Couverture de ta bibliothèque</div>
+        <div id="col-coverage"></div>
+      </aside>
+    </div>
   </section>
 
   <section id="page-create" class="page" hidden>

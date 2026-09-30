@@ -6,6 +6,7 @@
 import { COMMANDS, QUALITY_RULES } from './commands.js';
 import { SKILLS } from './skills.js';
 import { EFFECT_TYPES } from './taxonomy.js';
+import { classify, SECTORS, STYLES, TECHNIQUES, label as catLabel, normaliseSector, normaliseStyle } from './categories.js';
 
 const domainOf = (u) => {
   try {
@@ -28,7 +29,7 @@ async function readJson(fsa, p) {
 export async function summarizePack(fsa, dir) {
   const m = await readJson(fsa, dir + '/manifest.json');
   if (!m) return null;
-  const [tokens, dna, scroll, sections, files, assets, comps, scene] = await Promise.all([
+  const [tokens, dna, scroll, sections, files, assets, comps, scene, tags] = await Promise.all([
     readJson(fsa, dir + '/design/tokens.json'),
     readJson(fsa, dir + '/dna.json'),
     readJson(fsa, dir + '/motion/scroll-system.json'),
@@ -37,6 +38,7 @@ export async function summarizePack(fsa, dir) {
     readJson(fsa, dir + '/assets/manifest.json'),
     readJson(fsa, dir + '/structure/compositions.json'),
     readJson(fsa, dir + '/motion/scene.json'),
+    readJson(fsa, dir + '/tags.json'),
   ]);
   const t = tokens || {};
   const palette = Object.values(t.color || {})
@@ -54,7 +56,7 @@ export async function summarizePack(fsa, dir) {
   }
   const names = new Set(files.map((f) => f.name));
   const name = dir.split('/').pop();
-  return {
+  const summary = {
     name,
     path: dir,
     url: m.url,
@@ -76,7 +78,11 @@ export async function summarizePack(fsa, dir) {
     hasDna: names.has('DESIGN_DNA.md') || !!dna,
     dna: dna ? { keywords: dna.keywords || [], register: dna.register || null, sectors: dna.sectors || [], signatureEffects: dna.signatureEffects || [], tempo: dna.tempo || null } : null,
     verified: names.has('verify-report.md'),
+    tags: tags || null,
+    dnaCategory: dna && dna.category ? dna.category : null,
   };
+  summary.categories = classify(summary);
+  return summary;
 }
 
 export async function listPacks(fsa) {
@@ -100,10 +106,10 @@ export function libraryMd(packs) {
   const o = ['# DIP library', '', `${packs.length} site(s). Open Claude Code in this folder and use \`/dip-create <brief>\`, \`/dip-transform <client pack> <reference packs>\`, \`/dip-clone <url>\` or \`/dip-dna <pack folders>\`.`, ''];
   const noDna = packs.filter((p) => !p.hasDna);
   if (noDna.length) o.push(`⚠ ${noDna.length} pack(s) without DESIGN_DNA yet: run \`/dip-dna ${noDna.map((p) => p.path).join(' ')}\` (no API key needed).`, '');
-  o.push('| Site | Date | Tier | 3D | Scroll | Palette | Fonts | Effects | DNA keywords |');
-  o.push('|---|---|---|---|---|---|---|---|---|');
+  o.push('| Site | Sector | Styles | Date | Tier | 3D | Scroll | Palette | Fonts | Effects | DNA keywords |');
+  o.push('|---|---|---|---|---|---|---|---|---|---|---|');
   for (const p of packs)
-    o.push(`| [${p.domain}](${p.path}/SPEC.md) | ${String(p.date || '').slice(0, 10)} | ${p.tier} | ${p.threeD ? '✓' : ''} | ${p.scroll.type || ''}${p.scroll.lerp ? ' ' + p.scroll.lerp : ''} | ${p.palette.slice(0, 5).map((c) => c.hex).join(' ')} | ${p.fonts.slice(0, 3).join(', ')} | ${p.effects.length} | ${p.dna ? p.dna.keywords.slice(0, 6).join(', ') : p.hasDna ? '✓' : '—'} |`);
+    o.push(`| [${p.domain}](${p.path}/SPEC.md) | ${p.categories ? catLabel('sector', p.categories.sector) : ''} | ${p.categories ? p.categories.styles.map((x) => catLabel('style', x)).join(', ') : ''} | ${String(p.date || '').slice(0, 10)} | ${p.tier} | ${p.threeD ? '✓' : ''} | ${p.scroll.type || ''}${p.scroll.lerp ? ' ' + p.scroll.lerp : ''} | ${p.palette.slice(0, 5).map((c) => c.hex).join(' ')} | ${p.fonts.slice(0, 3).join(', ')} | ${p.effects.length} | ${p.dna ? p.dna.keywords.slice(0, 6).join(', ') : p.hasDna ? '✓' : '—'} |`);
   o.push('');
   return o.join('\n');
 }
@@ -138,12 +144,26 @@ export async function writeIndex(fsa) {
   const focus = await listFocus(fsa);
   await fsa.writeText('EFFECTS.md', effectsMd(packs) + (focus.length ? '\n## Focused analyses (effects/)\n\n' + focus.map((f) => `- [${f.commonName ? f.commonName.fr : f.type}](${f.path}/EFFECT.md) — ${f.host}, ${f.type} / ${f.trigger || '?'}${f.completed ? ' · fiche complète' : ' · à compléter : \`/dip-effect ' + f.path + '\`'}`).join('\n') + '\n' : ''));
   const pt = libraryPatterns(packs);
+  // the same numbers per sector (only sectors with at least 2 sites)
+  pt.bySector = {};
+  const cov = categoryCoverage(packs);
+  for (const sc of cov.sectors.filter((x) => x.sites >= 2)) pt.bySector[sc.key] = libraryPatterns(packs.filter((p) => p.categories && p.categories.sector === sc.key));
+  pt.coverage = cov;
   await fsa.writeText('patterns.json', JSON.stringify(pt, null, 2));
-  await fsa.writeText('PATTERNS.md', patternsMd(pt));
+  let md = patternsMd(pt);
+  md += '\n\n## Coverage by inspiration category\n\n' + ['sectors', 'styles', 'techniques'].map((ax) => `- **${ax}**: ` + cov[ax].filter((x) => x.sites).map((x) => `${x.label} (${x.sites})`).join(', ')).join('\n');
+  for (const [k, sp] of Object.entries(pt.bySector)) md += `\n\n## Sector: ${catLabel('sector', k)} (${sp.sites} sites)\n\n- Sections: median ${sp.sections.median}; signature moments: ${sp.density ? sp.density.signatureMoments : '—'}; most frequent sequence: ${sp.sequences[0] ? sp.sequences[0].sequence : '—'}\n- Roles: ` + sp.roles.map((r) => `${r.role} (${Math.round(r.share * 100)} %${r.effects[0] ? ', ' + r.effects[0].type : ''})`).join(' · ');
+  await fsa.writeText('PATTERNS.md', md);
   for (const [name, body] of Object.entries(COMMANDS)) await fsa.writeText('.claude/commands/' + name, body);
   await fsa.writeText('QUALITY_RULES.md', QUALITY_RULES);
   // lessons grow with every /dip-review: create once, never overwrite
-  if ((await fsa.readText('LESSONS.md').catch(() => null)) == null) await fsa.writeText('LESSONS.md', LESSONS_SEED);
+  const lessons = await fsa.readText('LESSONS.md').catch(() => null);
+  if (lessons == null) await fsa.writeText('LESSONS.md', LESSONS_SEED);
+  else {
+    // new built-in lessons are appended, the user's / Claude's own lines are kept
+    const missing = LESSONS_SEED.split('\n').filter((l) => l.startsWith('- ') && !lessons.includes(l.slice(2, 60)));
+    if (missing.length) await fsa.writeText('LESSONS.md', lessons.replace(/\s*$/, '\n') + missing.join('\n') + '\n');
+  }
   for (const [name, body] of Object.entries(SKILLS)) await fsa.writeText('.claude/skills/' + name, body);
   return packs;
 }
@@ -158,6 +178,7 @@ Written by /dip-review after each build (one rule per line). Read by /dip-create
 - kalibre: the studio section had a facts row floating in a half-empty screen → merge small facts into a denser block.
 - kalibre: signature moments were all in the intro and footer → place 2–4 in the middle sections (pinned, zoom, expand, décor change).
 - kalibre: many mobile links under 32 px high → touch targets ≥ 44 px.
+- kalibre: too short and too sparse to be remembered (6 visuals for 8 sections, no proof, no method, no FAQ, 9 screens without a call to action) → apply the minimum richness of QUALITY_RULES to every site.
 `;
 
 // ------------------------------------------------------------------ section roles (for patterns)
@@ -290,6 +311,11 @@ export function libraryPatterns(packs) {
   return out;
 }
 
+export function categoryCoverage(packs) {
+  const count = (axis, keys) => keys.map((k) => ({ key: k, label: catLabel(axis, k), sites: packs.filter((p) => p.categories && (axis === 'sector' ? p.categories.sector === k : axis === 'style' ? (p.categories.styles || []).includes(k) : (p.categories.techniques || []).includes(k))).length }));
+  return { sectors: count('sector', Object.keys(SECTORS)), styles: count('style', Object.keys(STYLES)), techniques: count('technique', Object.keys(TECHNIQUES)) };
+}
+
 export function patternsMd(pt) {
   const o = ['# Library patterns — what the premium sites of this library do', ''];
   if (!pt.sites) return o.concat(['No site with a section structure yet.']).join('\n');
@@ -327,6 +353,20 @@ export function rankReferences(packs, brief) {
         score += hits.length * 3;
         why.push('mots communs : ' + hits.slice(0, 5).join(', '));
       }
+      const cat = p.categories || {};
+      const briefText = [...bw].join(' ');
+      const wantSector = normaliseSector(briefText);
+      if (wantSector && cat.sector === wantSector) {
+        score += 5;
+        why.push('même secteur : ' + catLabel('sector', cat.sector));
+      }
+      const wantStyles = Object.keys(STYLES).filter((k) => STYLES[k].kw.test(briefText));
+      const styleHits = (cat.styles || []).filter((x) => wantStyles.includes(x));
+      if (styleHits.length) {
+        score += 3 * styleHits.length;
+        why.push('style : ' + styleHits.map((x) => catLabel('style', x)).join(', '));
+      }
+      if (cat.favorite) score += 1;
       if (wants3D && p.threeD) {
         score += 4;
         why.push('3D');

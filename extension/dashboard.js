@@ -1,7 +1,8 @@
 // DIP Studio — full-page dashboard: library folder, scans, measured animations, suggestions, creation commands.
 import { getRoot, pickRoot, access, fsAdapter, readBlob, savePack, removePack, writeFile, saveFocus } from './lib/workspace.js';
-import { listFocus, listPacks, writeIndex, effectsByType, rankReferences, librarySuggestions, libraryStats, words, versionLess, libraryPatterns } from './lib/library.js';
+import { categoryCoverage, listFocus, listPacks, writeIndex, effectsByType, rankReferences, librarySuggestions, libraryStats, words, versionLess, libraryPatterns } from './lib/library.js';
 import { ANALYZER_VERSION } from './lib/analyzer.js';
+import { SECTORS, STYLES, TECHNIQUES, SOURCES, label as catLabel } from './lib/categories.js';
 import { buildPackFiles, packName } from './lib/pack.js';
 import { dissectUrl, shareImage, focusUrl } from './lib/runner.js';
 import { analyzeFocus, focusFiles } from './lib/focus.js';
@@ -12,7 +13,7 @@ import { EFFECT_TYPES } from './lib/taxonomy.js';
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => [...(el || document).querySelectorAll(s)];
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const TITLES = { overview: 'Vue d’ensemble', library: 'Bibliothèque', sites: 'Sites construits', motion: 'Bibliothèque d’effets', create: 'Créer', settings: 'Réglages' };
+const TITLES = { overview: 'Vue d’ensemble', library: 'Bibliothèque', collect: 'Collecte', sites: 'Sites construits', motion: 'Bibliothèque d’effets', create: 'Créer', settings: 'Réglages' };
 const TYPE_FR = {
   'text-reveal-lines': 'Révélation de texte (lignes)', 'text-reveal-words': 'Révélation de texte (mots)', 'text-reveal-chars': 'Révélation de texte (lettres)', 'text-scramble': 'Texte brouillé',
   'fade-up-reveal': 'Apparition en fondu', 'scale-reveal': 'Apparition à l’échelle', marquee: 'Défilement infini', 'image-reveal-clip': 'Révélation d’image (masque)', 'image-parallax': 'Parallaxe d’image',
@@ -28,7 +29,7 @@ const TYPE_FR = {
 const typeFr = (t) => TYPE_FR[t] || t;
 const TRIGGERS = { load: 'au chargement', 'scroll-enter': 'à l’entrée au scroll', 'scroll-scrub': 'lié au scroll', hover: 'au survol', press: 'appui long', 'mouse-move': 'à la souris', click: 'au clic', drag: 'glisser', 'time-loop': 'en boucle', 'route-change': 'changement de page' };
 
-const state = { root: null, access: 'none', packs: [], sites: [], focus: [], page: 'overview', libFilter: 'all', moTrigger: 'all', moType: 'all', mode: 'create', refs: new Set(), refsTouched: false, windowId: null };
+const state = { root: null, access: 'none', packs: [], sites: [], focus: [], catSector: '', catStyle: '', catTech: '', colStyles: new Set(), page: 'overview', libFilter: 'all', moTrigger: 'all', moType: 'all', mode: 'create', refs: new Set(), refsTouched: false, windowId: null };
 const thumbCache = new Map();
 
 // ------------------------------------------------------------------ helpers
@@ -194,7 +195,7 @@ function render() {
   $('#page-empty').hidden = !needFolder;
   for (const p of Object.keys(TITLES)) $('#page-' + p).hidden = needFolder || p !== state.page;
   if (needFolder) return;
-  ({ overview: renderOverview, library: renderLibrary, sites: renderSites, motion: renderMotion, create: renderCreate, settings: () => {} })[state.page]();
+  ({ overview: renderOverview, library: renderLibrary, collect: renderCollect, sites: renderSites, motion: renderMotion, create: renderCreate, settings: () => {} })[state.page]();
 }
 
 // ------------------------------------------------------------------ cards
@@ -203,6 +204,7 @@ function packCard(p) {
   el.className = 'card';
   el.innerHTML = `<div class="thumb"><img alt=""><div class="tags"><span class="badge">Tier ${esc(p.tier)}</span>${p.threeD ? '<span class="badge violet">3D</span>' : ''}${p.hasDna ? '<span class="badge ok">ADN</span>' : ''}${isOld(p) ? `<span class="badge warn" title="Analysé avec DIP ${esc(p.analyzerVersion)} — version actuelle ${ANALYZER_VERSION}">ancienne version</span>` : ''}</div></div>
   <div class="card-b"><div class="card-t"><b>${esc(p.domain)}</b><span>${fmtDate(p.date)}</span></div>
+  <div class="card-cat">${esc(catLabel('sector', (p.categories || {}).sector))}${(p.categories || {}).styles && p.categories.styles.length ? ' · ' + p.categories.styles.map((x) => esc(catLabel('style', x))).join(', ') : ''}${(p.categories || {}).favorite ? ' · ★' : ''}</div>
   <div class="card-m"><span>${p.effects.length} animations · ${p.sections.length} sections</span><span class="sw">${p.palette.slice(0, 5).map((c) => `<i class="swatch" style="background:${esc(c.hex)}" title="${esc(c.hex)}"></i>`).join('')}</span></div></div>`;
   lazyImg($('img', el), thumbOf(p));
   el.onclick = () => openPack(p);
@@ -250,7 +252,17 @@ function matches(p, q) {
 function renderLibrary() {
   const q = $('#search').value;
   const f = state.libFilter;
-  const list = state.packs.filter((p) => (f === '3d' ? p.threeD : f === 'nodna' ? !p.hasDna : f === 'dna' ? p.hasDna : f === 'old' ? isOld(p) : true) && matches(p, q));
+  const cat = (p) => p.categories || { styles: [], techniques: [] };
+  const list = state.packs.filter((p) => (f === '3d' ? p.threeD : f === 'nodna' ? !p.hasDna : f === 'dna' ? p.hasDna : f === 'old' ? isOld(p) : true) && matches(p, q) && (!state.catSector || cat(p).sector === state.catSector) && (!state.catStyle || cat(p).styles.includes(state.catStyle)) && (!state.catTech || cat(p).techniques.includes(state.catTech)));
+  // category chips with counts (only values present in the library)
+  const cov = categoryCoverage(state.packs);
+  const chips = (el, rows, key) => {
+    el.innerHTML = [`<button class="seg ${!state[key] ? 'on' : ''}" data-v="">Tous</button>`, ...rows.filter((r) => r.sites).map((r) => `<button class="seg ${state[key] === r.key ? 'on' : ''}" data-v="${r.key}">${esc(r.label)}<span class="n">${r.sites}</span></button>`)].join('');
+    $$('.seg', el).forEach((b) => (b.onclick = () => ((state[key] = b.dataset.v), renderLibrary())));
+  };
+  chips($('#cat-sector'), cov.sectors, 'catSector');
+  chips($('#cat-style'), cov.styles, 'catStyle');
+  chips($('#cat-tech'), cov.techniques, 'catTech');
   const old = state.packs.filter(isOld);
   const btn = $('#btn-redissect-all');
   btn.hidden = !old.length;
@@ -488,6 +500,83 @@ function openSite(st) {
   })()));
 }
 
+// ------------------------------------------------------------------ collection (batch scans)
+function renderCollect() {
+  const sel = $('#col-sector');
+  if (sel.options.length < 2) sel.insertAdjacentHTML('beforeend', Object.entries(SECTORS).map(([k, v]) => `<option value="${k}">${esc(v.fr)}</option>`).join(''));
+  $('#col-styles').innerHTML = Object.entries(STYLES).map(([k, v]) => `<button type="button" class="seg ${state.colStyles.has(k) ? 'on' : ''}" data-cs="${k}">${esc(v.fr)}</button>`).join('');
+  $$('[data-cs]').forEach((b) => (b.onclick = () => {
+    state.colStyles.has(b.dataset.cs) ? state.colStyles.delete(b.dataset.cs) : state.colStyles.size < 3 && state.colStyles.add(b.dataset.cs);
+    renderCollect();
+  }));
+  $('#col-sources').innerHTML = SOURCES.map((x) => `<div class="src"><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)} ↗</a><span>${esc(x.note)}</span></div>`).join('');
+  const cov = categoryCoverage(state.packs);
+  const max = Math.max(1, ...cov.sectors.map((x) => x.sites));
+  $('#col-coverage').innerHTML = `<dl class="kv">${cov.sectors.filter((x) => x.key !== 'autre').map((x) => `<dt>${esc(x.label)}</dt><dd>${x.sites}<div class="bar-mini"><i style="width:${(x.sites / max) * 100}%"></i></div></dd>`).join('')}</dl><p class="hint">Vise 5 à 10 sites par secteur que tu veux vendre, avec des styles variés.</p>`;
+  countUrls();
+}
+const parseUrls = () => [...new Set($('#col-urls').value.split(/\s+/).map((u) => u.trim()).filter(Boolean).map((u) => (/^https?:\/\//.test(u) ? u : 'https://' + u)).filter((u) => /^https?:\/\/[^/]+\.[^/]+/.test(u)))];
+const hostOf = (u) => {
+  try {
+    return new URL(u).hostname.replace(/^www\./, '');
+  } catch (e) {
+    return u;
+  }
+};
+function countUrls() {
+  const urls = parseUrls();
+  const known = new Set(state.packs.map((p) => p.domain));
+  const skip = $('#col-skip').checked ? urls.filter((u) => known.has(hostOf(u))).length : 0;
+  $('#col-count').textContent = urls.length ? `${urls.length - skip} site(s) à scanner${skip ? `, ${skip} déjà présent(s)` : ''} · ≈ ${Math.round((urls.length - skip) * 4.5)} min` : '';
+}
+$('#col-urls').addEventListener('input', countUrls);
+$('#col-skip').addEventListener('change', countUrls);
+$('#col-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (reBusy || focusBusy) return toast('Une autre analyse est en cours');
+  if (!ready()) return toast('Choisis d’abord le dossier de la bibliothèque');
+  const known = new Set(state.packs.map((p) => p.domain));
+  const urls = parseUrls().filter((u) => !($('#col-skip').checked && known.has(hostOf(u))));
+  if (!urls.length) return toast('Aucune adresse à scanner');
+  const sector = $('#col-sector').value, styles = [...state.colStyles];
+  const bps = $('#col-bps').value.split(',').map(Number);
+  const st = (await chrome.storage.local.get(['dipSettings'])).dipSettings || {};
+  reBusy = true;
+  const job = $('#job');
+  job.hidden = false;
+  let ok = 0;
+  const failed = [];
+  try {
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      $('#job-title').textContent = `Collecte ${i + 1}/${urls.length} · ${hostOf(url)}`;
+      try {
+        const { cap, analysis } = await dissectUrl(url, { deep: true, breakpoints: bps, consent: st.consent || 'reject', maxHovers: st.maxHovers || 30, exportMode: 'study' }, (x) => {
+          $('#job-pct').textContent = x.pct + '%';
+          $('#job-bar').style.width = x.pct + '%';
+          $('#job-step').textContent = stepLabel('fr', x.label);
+        });
+        if (!analysis) throw new Error((cap.log.find((l) => l.level === 'error') || {}).error || 'analyse impossible');
+        $('#job-step').textContent = 'Enregistrement…';
+        const files = await buildPackFiles(cap, analysis, { mode: 'study' });
+        if (sector || styles.length) files.push({ path: 'tags.json', data: JSON.stringify({ sector: sector || undefined, styles, source: 'collecte', updated: new Date().toISOString() }, null, 2) });
+        await savePack(state.root, packName(cap), files);
+        ok++;
+      } catch (err) {
+        console.error(err);
+        failed.push(hostOf(url) + ' (' + (err.message || err) + ')');
+      }
+    }
+  } finally {
+    reBusy = false;
+    job.hidden = true;
+    await refresh();
+  }
+  toast(`${ok}/${urls.length} site(s) ajouté(s)${failed.length ? ' — échecs : ' + failed.length : ''}`);
+  if (failed.length) $('#col-count').textContent = 'Échecs : ' + failed.join(' · ');
+  else $('#col-urls').value = '';
+});
+
 // ------------------------------------------------------------------ drawer
 function drawer(title, html) {
   $('#dr-title').innerHTML = title;
@@ -525,6 +614,12 @@ function openPack(p) {
       <button class="ghost" id="dr-open">Ouvrir le site</button>
       <button class="ghost" id="dr-del">Supprimer</button>
     </div>
+    <div class="cat-edit"><div class="label">Catégorie d’inspiration <span class="muted" style="text-transform:none;letter-spacing:0">(${p.categories && p.categories.source.sector === 'user' ? 'choisie par toi' : p.categories && p.categories.source.sector === 'dna' ? 'depuis l’ADN' : 'détectée automatiquement'})</span></div>
+      <select id="cat-sel">${Object.entries(SECTORS).map(([k, v]) => `<option value="${k}" ${p.categories && p.categories.sector === k ? 'selected' : ''}>${esc(v.fr)}</option>`).join('')}</select>
+      <div class="filters" id="cat-styles" style="margin:0">${Object.entries(STYLES).map(([k, v]) => `<button class="seg ${p.categories && p.categories.styles.includes(k) ? 'on' : ''}" data-st="${k}">${esc(v.fr)}</button>`).join('')}</div>
+      <div class="muted small">Techniques mesurées : ${(p.categories ? p.categories.techniques : []).map((t) => esc(catLabel('technique', t))).join(', ') || '—'}</div>
+      <div class="row gap"><button id="cat-fav">${p.categories && p.categories.favorite ? '★ Favori' : '☆ Ajouter aux favoris'}</button><button class="primary" id="cat-save">Enregistrer la catégorie</button></div>
+    </div>
     ${p.palette.length ? `<div><div class="label" style="margin-bottom:8px">Palette</div><div class="dr-actions">${p.palette.map((c) => `<span class="chip"><i class="swatch" style="background:${esc(c.hex)}"></i><span class="mono">${esc(c.hex)}</span>${c.role ? `<span class="muted">${esc(c.role)}</span>` : ''}</span>`).join('')}</div></div>` : ''}
     ${p.fonts.length ? `<div><div class="label" style="margin-bottom:6px">Typographies</div><div>${p.fonts.map(esc).join(' · ')}</div></div>` : ''}
     <div><div class="label" style="margin-bottom:8px">Sections</div><div class="dr-secs">${p.sections.map((s) => `<div><img data-sec="${esc(s.id)}" alt=""><span>${esc(s.id)}</span></div>`).join('')}</div></div>
@@ -541,6 +636,24 @@ function openPack(p) {
   };
   if ($('#dr-dna')) $('#dr-dna').onclick = () => copy('/dip-dna ' + p.path);
   $('#dr-open').onclick = () => chrome.tabs.create({ url: p.url });
+  const chosen = new Set(p.categories ? p.categories.styles : []);
+  let fav = !!(p.categories && p.categories.favorite);
+  $$('[data-st]').forEach((b) => (b.onclick = () => {
+    chosen.has(b.dataset.st) ? chosen.delete(b.dataset.st) : chosen.size < 3 && chosen.add(b.dataset.st);
+    $$('[data-st]').forEach((x) => x.classList.toggle('on', chosen.has(x.dataset.st)));
+  }));
+  $('#cat-fav').onclick = () => {
+    fav = !fav;
+    $('#cat-fav').textContent = fav ? '★ Favori' : '☆ Ajouter aux favoris';
+  };
+  $('#cat-save').onclick = async () => {
+    await writeFile(state.root, `${p.path}/tags.json`, JSON.stringify({ sector: $('#cat-sel').value, styles: [...chosen], favorite: fav, updated: new Date().toISOString() }, null, 2));
+    await writeIndex(fsAdapter(state.root));
+    await refresh();
+    toast('Catégorie enregistrée');
+    const np = state.packs.find((x) => x.path === p.path);
+    if (np) openPack(np);
+  };
   $('#dr-focus').onclick = () => {
     closeDrawer();
     runFocusJob(p.url);

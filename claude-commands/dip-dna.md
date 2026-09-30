@@ -40,7 +40,11 @@ DESIGN_DNA.md sections:
 dna.json: { "keywords": [], "register": "", "sectors": [], "tempo": { "typicalDuration": s, "easings": [] },
 "scroll": {}, "palette": [{ "role", "hex", "share" }], "type": [{ "role", "family", "size" }],
 "sectionArchetypes": [], "signatureEffects": [{ "id", "type", "why" }], "threeD": { "used": bool, "style": "" },
-"copy": { "tone": "", "avgHeadlineWords": n } }.
+"copy": { "tone": "", "avgHeadlineWords": n },
+"category": { "sector": one of luxe-mode | hotellerie-restauration | tech-saas-ia | studio-agence | portfolio |
+architecture-immobilier | ecommerce-produit | culture-evenement | auto-mobilite | sante-bienetre | finance-conseil |
+food-boisson | education-ong | media-contenu | autre, "styles": 1–3 of minimal-editorial | luxe-epure | immersif-3d |
+experimental | brutaliste | ludique-colore | tech-futuriste | organique-nature | retro-vintage | sombre-cinema } }.
 
 Rules: every number must come from the pack (write [estimated] otherwise). Do not reproduce the site's
 texts, images, fonts or shader code: describe them. Write in the language the user writes to you in

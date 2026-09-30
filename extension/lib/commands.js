@@ -21,7 +21,19 @@ export const QUALITY_RULES = `# QUALITY RULES — non-negotiable for every page 
    gracefully.
 8. Content honesty: missing client facts stay visible as [à confirmer]; never invent testimonials,
    clients, figures or awards.
-9. Done means verified: \`node <DIP>/cli/dip-review.js --url <local url> --out sites/<slug>/review --library <library>\`
+9. Minimum richness — every site built with DIP, whatever the brief:
+   - at least 10 real sections (or the library median if higher) and 10+ screens of scroll at 1440;
+   - the whole story: hook → tension / need → showcase (projects, cases, gallery, the place) → proof (figures,
+     testimonials, logos, press — shown as [à confirmer] until the client provides them) → method / how it
+     works → offer (services, packages, prices) → FAQ → final call to action;
+   - visuals everywhere: at least 1.5 strong visuals per section on average and 12+ in total (photo, video,
+     illustration, 3D, animated composition); the showcase has 3+; never two text-only sections in a row;
+   - calls to action: the main one 3+ times in the page (after the hero, mid-page, at the end) with varied
+     wording, never more than 3–4 screens without one, plus a lighter secondary action;
+   - a reason to come back: newsletter with a clear promise, journal / recent cases, free resources or
+     social content put on stage;
+   - 3+ signature moments spread over the page so the visitor stays dazzled until the end.
+10. Done means verified: \`node <DIP>/cli/dip-review.js --url <local url> --out sites/<slug>/review --library <library>\`
    scores ≥ 85, and every 🔴 item of REVIEW.md is fixed.
 `;
 
@@ -67,7 +79,11 @@ DESIGN_DNA.md sections:
 dna.json: { "keywords": [], "register": "", "sectors": [], "tempo": { "typicalDuration": s, "easings": [] },
 "scroll": {}, "palette": [{ "role", "hex", "share" }], "type": [{ "role", "family", "size" }],
 "sectionArchetypes": [], "signatureEffects": [{ "id", "type", "why" }], "threeD": { "used": bool, "style": "" },
-"copy": { "tone": "", "avgHeadlineWords": n } }.
+"copy": { "tone": "", "avgHeadlineWords": n },
+"category": { "sector": one of luxe-mode | hotellerie-restauration | tech-saas-ia | studio-agence | portfolio |
+architecture-immobilier | ecommerce-produit | culture-evenement | auto-mobilite | sante-bienetre | finance-conseil |
+food-boisson | education-ong | media-contenu | autre, "styles": 1–3 of minimal-editorial | luxe-epure | immersif-3d |
+experimental | brutaliste | ludique-colore | tech-futuriste | organique-nature | retro-vintage | sombre-cinema } }.
 
 Rules: every number must come from the pack (write [estimated] otherwise). Do not reproduce the site's
 texts, images, fonts or shader code: describe them. Write in the language the user writes to you in

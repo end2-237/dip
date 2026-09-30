@@ -54,7 +54,19 @@ Steps:
    gracefully.
 8. Content honesty: missing client facts stay visible as [à confirmer]; never invent testimonials,
    clients, figures or awards.
-9. Done means verified: `node <DIP>/cli/dip-review.js --url <local url> --out sites/<slug>/review --library <library>`
+9. Minimum richness — every site built with DIP, whatever the brief:
+   - at least 10 real sections (or the library median if higher) and 10+ screens of scroll at 1440;
+   - the whole story: hook → tension / need → showcase (projects, cases, gallery, the place) → proof (figures,
+     testimonials, logos, press — shown as [à confirmer] until the client provides them) → method / how it
+     works → offer (services, packages, prices) → FAQ → final call to action;
+   - visuals everywhere: at least 1.5 strong visuals per section on average and 12+ in total (photo, video,
+     illustration, 3D, animated composition); the showcase has 3+; never two text-only sections in a row;
+   - calls to action: the main one 3+ times in the page (after the hero, mid-page, at the end) with varied
+     wording, never more than 3–4 screens without one, plus a lighter secondary action;
+   - a reason to come back: newsletter with a clear promise, journal / recent cases, free resources or
+     social content put on stage;
+   - 3+ signature moments spread over the page so the visitor stays dazzled until the end.
+10. Done means verified: `node <DIP>/cli/dip-review.js --url <local url> --out sites/<slug>/review --library <library>`
    scores ≥ 85, and every 🔴 item of REVIEW.md is fixed.
 
 Never copy texts, images, fonts, models or shader code from the library: borrow principles and measured

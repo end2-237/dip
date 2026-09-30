@@ -124,6 +124,24 @@ ancienne version portent le badge « ancienne version » : **Bibliothèque → R
 versions** (ou « Redisséquer » dans la fiche d'un site). Une petite fenêtre s'ouvre pour chaque site ; garde
 le tableau de bord visible. L'ADN déjà écrit par Claude (`DESIGN_DNA.md`, `dna.json`) est conservé.
 
+## Collecte et catégories d'inspiration
+
+- Tableau de bord → **Collecte** : colle une liste d'adresses (une par ligne), choisis éventuellement le secteur
+  et le style, et DIP les scanne l'une après l'autre (3 à 6 min par site) dans une petite fenêtre.
+  Les sites déjà présents sont ignorés. La page rappelle où trouver des sites premium (Awwwards, FWA, CSSDA,
+  Godly, SiteInspire…) et montre la couverture de ta bibliothèque par secteur.
+- Chaque site est classé sur 3 axes :
+  - **secteur** (luxe & mode, hôtellerie, tech/SaaS/IA, studio & agence, portfolio, architecture, e-commerce,
+    culture, auto, santé, finance, food, éducation/ONG, médias & contenu) ;
+  - **style** (minimal éditorial, luxe épuré, immersif 3D, expérimental, brutaliste, ludique & coloré,
+    tech futuriste, organique, rétro, sombre & cinématographique) ;
+  - **techniques** mesurées (3D/WebGL, storytelling au scroll, typographie animée, images & galeries,
+    micro-interactions, changements de décor, scroll fluide).
+  Le secteur et le style sont devinés, puis précisés par l'ADN (`/dip-dna`), et tu peux les corriger dans
+  la fiche du site (★ favori compris). Filtres par secteur / style / technique dans la Bibliothèque.
+- `PATTERNS.md` donne aussi les chiffres **par secteur**, et `/dip-create` privilégie les références du même
+  secteur et du même style que le brief.
+
 ## Analyse ciblée d'une animation
 
 Pour comprendre **une** animation à fond (déjà disséquée ou non) :
@@ -151,7 +169,10 @@ Pour comprendre **une** animation à fond (déjà disséquée ou non) :
   Il écrit `REVIEW.md` (corrections par priorité, avec captures) et un score sur 100 (objectif ≥ 85).
 - Dans Claude Code (bibliothèque ouverte) : **`/dip-review sites/<projet>`** lance la revue, corrige, relance
   (3 tours max) et ajoute les nouvelles erreurs à **`LESSONS.md`**, que `/dip-create` lit avant chaque projet.
-- **`QUALITY_RULES.md`** (racine de la bibliothèque et chaque pack de production) : les règles non négociables.
+- **`QUALITY_RULES.md`** (racine de la bibliothèque et chaque pack de production) : les règles non négociables,
+  dont la **richesse minimale** de tout site DIP : 10 sections ou plus, l'histoire complète (accroche, besoin,
+  vitrine, preuves, méthode, offre, FAQ, appel final), 12 visuels ou plus, un appel à l'action au moins toutes
+  les 3–4 pages d'écran, une raison de revenir, 3 moments signature ou plus. `dip-review` les vérifie.
 - **`PATTERNS.md`** : ce que font les sites de ta bibliothèque, en chiffres (nombre de sections, enchaînements,
   images et effets par rôle de section, rythme des décors, densité d'animation). `/dip-create` part de ces chiffres.
 - Tableau de bord → **Sites** : chaque site de `sites/` avec son aperçu, son score, ses points à corriger

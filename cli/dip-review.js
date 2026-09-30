@@ -137,6 +137,53 @@ const PAGE_HELPERS = `(() => {
       }
       return { overflow, wide, tiny, tinyEx, small, smallEx };
     },
+    // richness of the page: sections, visuals per section, calls to action, story arc, reasons to come back
+    richness(sections) {
+      const vh = innerHeight, sy = scrollY, docH = document.documentElement.scrollHeight;
+      const hdr = header();
+      const vis = [];
+      let bgCanvas = false;
+      for (const el of document.body.querySelectorAll('img, video, picture, canvas, svg, iframe, [style*="background-image"], div, figure, span')) {
+        const tag = el.localName;
+        const s = cs(el);
+        const isMedia = /^(img|video|picture|canvas|iframe)$/.test(tag) || (tag === 'svg') || (s.backgroundImage && /url\\(/.test(s.backgroundImage));
+        if (!isMedia || !visible(el)) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 120 || r.height < 80) continue;
+        if (tag === 'canvas' && (s.position === 'fixed' || (r.width > innerWidth * 0.9 && r.height > vh * 0.9))) { bgCanvas = true; continue; }
+        if (tag === 'img' && el.closest('picture') && vis.some((v) => v.el === el.closest('picture'))) continue;
+        vis.push({ el, y: r.top + sy, h: r.height });
+      }
+      const per = sections.map((sec) => ({ id: sec.id, top: sec.top, height: sec.height, visuals: vis.filter((v) => v.y + v.h / 2 >= sec.top && v.y + v.h / 2 < sec.top + sec.height).length }));
+      if (bgCanvas && per[0]) per[0].visuals += 1;
+      const CTA = /r[ée]serv|book|contact|devis|commenc|start|essay|try|achet|buy|inscri|sign ?up|rejoin|join|demand|parl|call|appel|[ée]cri(re|s)|get started|let'?s talk|d[ée]marr|lancer|prendre rendez|rdv/i;
+      const ctas = [];
+      for (const el of document.body.querySelectorAll('a, button')) {
+        if (hdr && hdr.contains(el)) continue;
+        if (!visible(el)) continue;
+        const t = (el.innerText || el.getAttribute('aria-label') || '').trim();
+        if (!t || t.length > 60 || !CTA.test(t)) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 10) continue;
+        ctas.push({ y: Math.round(r.top + sy), t: t.slice(0, 40) });
+      }
+      ctas.sort((a, b) => a.y - b.y);
+      let maxGap = ctas.length ? ctas[0].y : docH;
+      for (let i = 1; i < ctas.length; i++) maxGap = Math.max(maxGap, ctas[i].y - ctas[i - 1].y);
+      if (ctas.length) maxGap = Math.max(maxGap, docH - ctas[ctas.length - 1].y);
+      const headerCta = !!(hdr && hdr.els.some((h) => [...h.querySelectorAll('a, button')].some((b) => CTA.test(b.innerText || ''))));
+      const text = (document.body.innerText || '').toLowerCase();
+      const has = (re) => re.test(text);
+      const arc = {
+        proof: has(/\\d+\\s?(%|\\+|k\\b|m\\b|ans|years|clients|projets|projects|créateurs|avis|reviews)|témoign|testimonial|ils nous font confiance|trusted by|clients|études de cas|case stud|références|presse|press|awards?|récompens/),
+        showcase: per.some((p) => p.visuals >= 3),
+        method: has(/méthode|process|comment ça marche|how it works|étape|step|approche|approach|notre façon/),
+        offer: has(/tarif|prix|price|pricing|formule|offre|services?|pack|abonnement|plan/),
+        faq: has(/faq|questions fréquentes|frequently asked/),
+        comeBack: !!document.querySelector('input[type=email], form[action*="newsletter"], [class*="newsletter"]') || has(/newsletter|abonne-toi|subscribe|journal|blog|actualités|ressources|resources|podcast|instagram|tiktok|youtube|suis-nous|follow us/),
+      };
+      return { docVh: Math.round((docH / vh) * 10) / 10, sections: per, visuals: vis.length, bgCanvas, ctas, maxCtaGapVh: Math.round((maxGap / vh) * 10) / 10, headerCta, arc };
+    },
     placeholders() {
       const t = document.body.innerText || '';
       const m = t.match(/\\[[^\\]\\n]{2,60}\\]|lorem ipsum/gi) || [];
@@ -284,6 +331,44 @@ async function main() {
     if (sections.length > 3 && mid.length < 2) add('medium', 'motion', `Seulement ${mid.length} moment(s) fort(s) dans le milieu de la page (les effets marquants sont concentrés sur l'intro ou le footer).`, "Répartir 2 à 4 moments signature dans les sections du milieu : section épinglée, zoom à travers un objet, média qui s'agrandit, changement de décor, composition d'images en mouvement, 3D qui accompagne le scroll.", null, 6);
   }
 
+  // 3b. richness minimums (a DIP site must tell a whole story, show a lot, and keep asking for action)
+  let rich = null;
+  try {
+    rich = await driver.evaluate(`window.__dipReview.richness(${JSON.stringify(sections.map((x) => ({ id: x.id, top: x.top, height: x.height })))})`);
+  } catch (e) {
+    rich = null;
+  }
+  let libMedian = null;
+  if (a.library) {
+    const pp = path.join(path.resolve(a.library), 'patterns.json');
+    if (fs.existsSync(pp)) libMedian = (JSON.parse(fs.readFileSync(pp, 'utf8')).sections || {}).median || null;
+  }
+  if (rich) {
+    const minSections = Math.max(10, libMedian || 0);
+    const real = rich.sections.filter((x) => x.height > H * 0.4);
+    if (real.length < minSections) add('high', 'histoire', `Seulement ${real.length} sections (minimum ${minSections}${libMedian ? `, médiane de ta bibliothèque : ${libMedian}` : ''}). Le site est trop court pour raconter l'histoire et rester en mémoire.`, `Ajouter des sections qui font avancer le récit : le problème / la tension, une vitrine (projets, cas, galerie), la preuve (chiffres, témoignages, logos, presse), la méthode, l'offre, une FAQ, un appel final. Chaque section a un rôle et un visuel (voir PATTERNS.md).`, null, 12);
+    if (rich.docVh < 10) add('medium', 'histoire', `La page ne fait que ${rich.docVh} écrans de haut (minimum 10).`, "Allonger le parcours avec du contenu utile et des moments visuels (séquence épinglée, galerie, cas client), pas avec du vide.", null, 5);
+    if (rich.visuals < Math.max(12, real.length * 1.5)) add('high', 'images', `Seulement ${rich.visuals} visuels (images, vidéos, illustrations, 3D) pour ${real.length} sections — minimum ${Math.max(12, Math.ceil(real.length * 1.5))}.`, 'Chaque section a au moins un visuel fort (photo, vidéo, illustration, 3D, composition animée) ; la vitrine en a au moins 3. Utiliser ASSETS.md et dip-assets pour les produire.', null, 10);
+    let run = 0, worst = 0, where = null;
+    for (const x of real) {
+      if (!x.visuals) {
+        run++;
+        if (run > worst) (worst = run), (where = x.id);
+      } else run = 0;
+    }
+    if (worst >= 2) add('medium', 'images', `${worst} sections de suite sans aucun visuel (jusqu'à ${where}).`, 'Jamais deux sections de texte seul à la suite : illustrer, montrer le lieu, le produit, les gens, le résultat.', null, 5);
+    if (rich.ctas.length < 3) add('high', 'action', `Seulement ${rich.ctas.length} appel(s) à l'action dans la page (hors menu) — minimum 3 : après le hero, au milieu, à la fin.`, "Répéter l'appel à l'action principal (ex. « Réserver une séance ») après chaque moment fort, avec une formulation qui varie ; ajouter un CTA secondaire plus léger (« Voir les formules », « Écouter un exemple »).", null, 8);
+    else if (rich.maxCtaGapVh > 4) add('medium', 'action', `Jusqu'à ${rich.maxCtaGapVh} écrans sans appel à l'action.`, 'Pas plus de 3 à 4 écrans sans proposer d’agir.', null, 4);
+    const miss = [];
+    if (!rich.arc.showcase) miss.push('une vitrine visuelle (projets, cas, galerie, lieu)');
+    if (!rich.arc.proof) miss.push('des preuves (chiffres, témoignages, logos, presse — même « [à confirmer] »)');
+    if (!rich.arc.method) miss.push('la méthode / le déroulé');
+    if (!rich.arc.offer) miss.push("l'offre (services, formules, tarifs)");
+    if (!rich.arc.faq) miss.push('une FAQ qui lève les objections');
+    if (miss.length) add(miss.length > 2 ? 'high' : 'medium', 'histoire', `Il manque au récit : ${miss.join(', ')}.`, "Un site DIP raconte toute l'histoire : accroche → tension / besoin → vitrine → preuve → méthode → offre → FAQ → appel final.", null, Math.min(12, miss.length * 3));
+    if (!rich.arc.comeBack) add('medium', 'retour', 'Rien ne donne de raison de revenir (newsletter, journal, ressources, contenus, réseaux).', "Ajouter un « crochet de retour » : newsletter avec une promesse claire, journal / cas récents, ressources gratuites, ou réseaux mis en scène.", null, 4);
+  }
+
   // 4. mobile
   await driver.setViewport(390, 844);
   await page.reload({ waitUntil: 'load' }).catch(() => {});
@@ -313,6 +398,7 @@ async function main() {
   issues.sort((x, y) => sevOrder[x.sev] - sevOrder[y.sev] || y.cost - x.cost);
   const L = [`# REVIEW — ${url}`, '', `Score qualité : **${score} / 100** ${score >= 85 ? '✓' : '✗ (objectif ≥ 85)'} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`, ''];
   L.push(`Hero : ${hero.idleChange} % de l'image change en 2 s au repos, ${hero.pointerChange} % quand la souris bouge.`);
+  if (rich) L.push(`Richesse : ${rich.sections.length} sections, ${rich.docVh} écrans, ${rich.visuals} visuels, ${rich.ctas.length} appels à l'action (écart max ${rich.maxCtaGapVh} écrans), récit : ${Object.entries(rich.arc).map(([k, v]) => (v ? '✓ ' : '✗ ') + k).join(' · ')}`);
   if (perSection.length) L.push(`Sections : ${perSection.length} — ${perSection.map((p) => `${p.id} (${p.effects.length})`).join(', ')}`);
   if (patterns && patterns.sections) L.push(`Bibliothèque : médiane ${patterns.sections.median} sections, ${patterns.density ? patterns.density.signatureMoments : '?'} moments signature par site.`);
   L.push('', '## À corriger (par priorité)', '');
@@ -325,7 +411,7 @@ async function main() {
   if (!issues.length) L.push('Rien à signaler.');
   L.push('', 'Relancer après corrections : `node <DIP>/cli/dip-review.js --url ' + url + ' --out ' + path.relative(process.cwd(), out) + '`');
   fs.writeFileSync(path.join(out, 'REVIEW.md'), L.join('\n'));
-  fs.writeFileSync(path.join(out, 'review.json'), JSON.stringify({ url, date: new Date().toISOString(), score, hero, sections: perSection, mobile: mob, placeholders, issues, errors: errs }, null, 2));
+  fs.writeFileSync(path.join(out, 'review.json'), JSON.stringify({ url, date: new Date().toISOString(), score, hero, sections: perSection, richness: rich, mobile: mob, placeholders, issues, errors: errs }, null, 2));
   console.log(L.join('\n'));
   process.exit(score >= 85 ? 0 : 1);
 }
