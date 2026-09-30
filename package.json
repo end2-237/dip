@@ -9,7 +9,8 @@
     "dip-verify": "cli/dip-verify.js",
     "dip-assets": "cli/dip-assets.js",
     "dip-library": "cli/dip-library.js",
-    "dip-review": "cli/dip-review.js"
+    "dip-review": "cli/dip-review.js",
+    "dip-focus": "cli/dip-focus.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",
@@ -19,7 +20,8 @@
     "package:extension": "node scripts/package-extension.js",
     "assets": "node cli/dip-assets.js",
     "library": "node cli/dip-library.js",
-    "review": "node cli/dip-review.js"
+    "review": "node cli/dip-review.js",
+    "focus": "node cli/dip-focus.js"
   },
   "engines": {
     "node": ">=20"

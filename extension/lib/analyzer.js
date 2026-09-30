@@ -762,6 +762,7 @@ function classify(e, ctx) {
   }
   if (/clip-?path|clippath|inset\(|polygon\(/.test(propsStr)) return media ? 'image-reveal-clip' : 'image-reveal-clip';
   if (e.trigger === 'scroll-scrub') {
+    if (a.channels && a.channels[0] === 'rotate') return 'scroll-rotation';
     if (a.channels && a.channels[0] === 'x' && a.values && a.values.x && Math.abs(a.values.x.max - a.values.x.min) > ctx.vw * 0.6) return 'horizontal-scroll-section';
     if (media || /ypercent|"y"|scale/.test(propsStr)) return 'image-parallax';
   }

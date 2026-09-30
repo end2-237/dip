@@ -97,6 +97,11 @@
   </section>
 
   <section id="page-motion" class="page" hidden>
+    <div class="panel focus-head">
+      <div><h3>Analyses ciblées</h3><p class="hint" style="margin-top:4px">Entoure une animation sur un site : DIP la rejoue sous tous les angles (chargement, scroll, survol, souris, appui, clic, glisser) et crée sa fiche. Claude la complète ensuite avec <span class="mono">/dip-effect</span>.</p></div>
+      <button class="primary" id="btn-focus-new"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" stroke-dasharray="2.2 2"/><path d="M8 5.5v5M5.5 8h5"/></svg>Analyser une animation</button>
+    </div>
+    <div id="focus-grid" class="fxgrid" style="margin-bottom:26px"></div>
     <div class="filters" id="mo-types"></div>
     <div class="filters" id="mo-filters"></div>
     <div id="mo-list" class="fxgrid"></div>
@@ -180,6 +185,16 @@
     <input type="url" id="scan-url" placeholder="https://…" required>
     <p class="hint">La page s’ouvre avec le panneau DIP : clique sur « Disséquer ce site ». Le pack sera rangé dans ta bibliothèque.</p>
     <div class="row gap end"><button value="cancel" class="ghost">Annuler</button><button value="ok" class="primary" id="scan-go">Ouvrir et scanner</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-focus" class="dlg">
+  <form method="dialog">
+    <div class="label">Analyse ciblée</div>
+    <h2>Quelle animation veux-tu comprendre ?</h2>
+    <input type="url" id="focus-url" placeholder="https://…" required>
+    <p class="hint">Le site s’ouvre dans une fenêtre à droite. Fais défiler jusqu’à l’animation, clique « Entourer » et dessine un cercle autour. Garde ce tableau de bord visible pendant l’analyse (1 à 2 minutes).</p>
+    <div class="row gap end"><button value="cancel" class="ghost">Annuler</button><button value="ok" class="primary" id="focus-go">Ouvrir le site</button></div>
   </form>
 </dialog>
 

@@ -2082,6 +2082,102 @@
     return out.slice(0, max || 6);
   }
 
+  // ================================================================ focus analysis (one zone, in depth)
+  // region in document px {x, y, w, h}. Tracks every element of the zone with full style sampling.
+  function focusPick(region, max) {
+    const out = { root: null, elements: [], hasCanvas: false };
+    try {
+      const sy = scrollPos();
+      const R = { l: region.x, t: region.y - sy, r: region.x + region.w, b: region.y - sy + region.h };
+      const area = Math.max(1, region.w * region.h);
+      const cx = (R.l + R.r) / 2, cy = (R.t + R.b) / 2;
+      const cands = [];
+      for (const el of D.body.querySelectorAll('*')) {
+        if (el.closest('[data-dip-overlay]')) continue;
+        const b = el.getBoundingClientRect();
+        if (b.width < 2 || b.height < 2) continue;
+        const iw = Math.min(b.right, R.r) - Math.max(b.left, R.l), ih = Math.min(b.bottom, R.b) - Math.max(b.top, R.t);
+        if (iw <= 0 || ih <= 0) continue;
+        const inter = iw * ih, ea = b.width * b.height;
+        const inside = inter / ea; // share of the element inside the zone
+        const covers = inter / area; // share of the zone covered by the element
+        const holdsCentre = b.left <= cx && b.right >= cx && b.top <= cy && b.bottom >= cy;
+        if (inside >= 0.3 || (holdsCentre && ea < area * 6)) cands.push({ el, b, inside, covers, ea });
+        if (holdsCentre && covers >= 0.8 && (!out._root || ea < out._root.ea)) out._root = { el, ea };
+      }
+      cands.sort((a, b) => b.inside - a.inside || a.ea - b.ea);
+      rec.maxTracked = Math.max(rec.maxTracked, rec.tracked.size + (max || 180) + 20);
+      for (const c of cands.slice(0, max || 180)) {
+        const tk = track(c.el);
+        if (tk) {
+          tk.extraOn = true;
+          tk.wantRect = true;
+          if (!tk.t.length) sampleTrack(tk, c.el, N.getCS(c.el), rel(), scrollPos());
+        }
+        const tag = c.el.localName;
+        if (tag === 'canvas') out.hasCanvas = true;
+        out.elements.push({ nid: nid(c.el), selector: selector(c.el), tag, rect: { x: r2(c.b.left), y: r2(c.b.top + sy), w: r2(c.b.width), h: r2(c.b.height) }, inside: Math.round(c.inside * 100) / 100, text: ((c.el.childNodes.length && [...c.el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) ? c.el.textContent.trim().slice(0, 80) : null), media: /^(img|video|canvas|picture|svg)$/.test(tag) });
+      }
+      if (out._root) {
+        const b = out._root.el.getBoundingClientRect();
+        out.root = { nid: nid(out._root.el), selector: selector(out._root.el), tag: out._root.el.localName, rect: { x: r2(b.left), y: r2(b.top + sy), w: r2(b.width), h: r2(b.height) } };
+      }
+      delete out._root;
+    } catch (e) {
+      journal.error('focus-pick', e);
+    }
+    return out;
+  }
+  // CSS rules that style the zone's elements (hover / active / keyframes included): the code excerpt of the card
+  function focusCss(nids, max) {
+    const els = (nids || []).map(elByNid).filter(Boolean);
+    const out = { rules: [], keyframes: [] };
+    if (!els.length) return out;
+    const names = new Set();
+    const strip = (sel) => sel.replace(/::?(hover|focus|focus-visible|focus-within|active|visited|before|after|placeholder|selection|first-line|first-letter|marker)(\([^)]*\))?/g, '').trim() || '*';
+    const walk = (rules, depth) => {
+      if (!rules || depth > 4) return;
+      for (const r of rules) {
+        if (out.rules.length >= (max || 60)) return;
+        if (r.cssRules && !r.selectorText && r.type !== 7) walk(r.cssRules, depth + 1);
+        if (r.type === 7 && r.name) {
+          if (!out._kf) out._kf = new Map();
+          out._kf.set(r.name, r.cssText.slice(0, 1500));
+          continue;
+        }
+        if (!r.selectorText) continue;
+        let hit = false;
+        for (const part of r.selectorText.split(',')) {
+          const q = strip(part);
+          try {
+            if (els.some((el) => el.matches(q))) {
+              hit = true;
+              break;
+            }
+          } catch (e) {
+            /* unsupported selector */
+          }
+        }
+        if (!hit) continue;
+        const txt = r.cssText;
+        if (!/transition|animation|transform|opacity|clip-path|filter|:hover|:active|:focus|will-change|mix-blend|mask/.test(txt)) continue;
+        out.rules.push(txt.slice(0, 800));
+        const an = r.style && (r.style.animationName || r.style.animation);
+        if (an) for (const n of String(an).split(/[\s,]+/)) names.add(n);
+      }
+    };
+    for (const sh of D.styleSheets) {
+      try {
+        walk(sh.cssRules, 0);
+      } catch (e) {
+        /* cross-origin */
+      }
+    }
+    if (out._kf) for (const n of names) if (out._kf.has(n)) out.keyframes.push(out._kf.get(n));
+    delete out._kf;
+    return out;
+  }
+
   // Multi-image compositions: parents holding ≥ 4 visual children (img / video / canvas / background images).
   // Positions include transforms (getBoundingClientRect), so spirals / fans built with transforms are seen.
   function isVisualEl(el) {
@@ -3121,6 +3217,8 @@
     listClickables,
     sceneSample,
     mediaGroups,
+    focusPick,
+    focusCss,
     glState,
     fetchBase64,
     threeMotion: () => [...three.tracks.values()].filter((tk) => tk.t.length > 2).map(({ last, ...tk }) => tk),

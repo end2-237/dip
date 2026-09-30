@@ -47,3 +47,5 @@ label.row, .row { flex-direction: row; align-items: center; gap: 8px; display: f
 #message { font-size: 11.5px; }
 #message.error { border-color: rgba(255, 106, 61, .35); color: #ffb49c; }
 #message.ok { border-color: rgba(79, 209, 161, .3); }
+
+.wide-btn { width: 100%; margin-top: 6px; }

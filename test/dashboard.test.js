@@ -150,3 +150,58 @@ test('dashboard: one-click re-dissection of an old pack keeps its DNA', { timeou
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('dashboard: focus analysis of one circled animation', { timeout: 300000 }, async () => {
+  const { chromium } = await import('playwright');
+  const srv = await serve('fixtures', 0);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dipfocus-'));
+  const ext = path.resolve('extension');
+  const ctx = await chromium.launchPersistentContext(path.join(tmp, 'profile'), { headless: false, viewport: { width: 1440, height: 900 }, args: ['--headless=new', `--disable-extensions-except=${ext}`, `--load-extension=${ext}`] });
+  try {
+    let [sw] = ctx.serviceWorkers();
+    if (!sw) sw = await ctx.waitForEvent('serviceworker');
+    const id = new URL(sw.url()).host;
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`chrome-extension://${id}/dashboard.html?opfs=1#motion`);
+    await page.click('#btn-focus-new');
+    await page.fill('#focus-url', `${srv.url}/gsap-lenis/`);
+    const popup = ctx.waitForEvent('page');
+    await page.click('#focus-go');
+    const site = await popup;
+    // the user: circle the hero title with the mouse, then confirm
+    await site.waitForSelector('[data-dip-overlay]', { state: 'attached', timeout: 60000 });
+    await site.waitForTimeout(500);
+    await site.click('[data-dip-overlay] >> css=button.draw');
+    const vp = site.viewportSize() || { width: 1280, height: 800 };
+    const cx = vp.width / 2, cy = vp.height * 0.45, rx = vp.width * 0.4, ry = vp.height * 0.25;
+    await site.mouse.move(cx + rx, cy);
+    await site.mouse.down();
+    for (let i = 1; i <= 36; i++) await site.mouse.move(cx + rx * Math.cos((i / 36) * Math.PI * 2), cy + ry * Math.sin((i / 36) * Math.PI * 2));
+    await site.mouse.up();
+    await site.click('[data-dip-overlay] >> css=button.draw');
+    await page.waitForSelector('#focus-grid .fx', { timeout: 240000 });
+    const out = await page.evaluate(async () => {
+      const r = await navigator.storage.getDirectory();
+      const eff = await r.getDirectoryHandle('effects');
+      const names = [];
+      for await (const [n] of eff.entries()) names.push(n);
+      const d = await eff.getDirectoryHandle(names[0]);
+      const txt = async (f) => (await (await d.getFileHandle(f)).getFile()).text();
+      return { names, json: JSON.parse(await txt('effect.json')), md: await txt('EFFECT.md'), lib: await (await (await r.getFileHandle('EFFECTS.md')).getFile()).text() };
+    });
+    assert.equal(out.names.length, 1);
+    assert.equal(out.json.type, 'text-reveal-lines');
+    assert.match(out.json.commonName.fr, /ligne par ligne/);
+    assert.ok(out.json.frames.length >= 8);
+    assert.match(out.md, /\/dip-effect/);
+    assert.match(out.lib, /Focused analyses/);
+    await page.waitForSelector('#drawer:not([hidden]) .frames img');
+    assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+    await srv.close();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

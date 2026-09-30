@@ -89,3 +89,10 @@ export async function removePack(root, name) {
   await base.removeEntry(name, { recursive: true });
   await writeIndex(fsAdapter(root));
 }
+
+// Focus analysis → effects/<slug>/ and refreshed indexes
+export async function saveFocus(root, slug, files) {
+  for (const f of files) await writeFile(root, `effects/${slug}/${f.path}`, f.data);
+  await writeIndex(fsAdapter(root));
+  return `effects/${slug}`;
+}

@@ -124,6 +124,22 @@ ancienne version portent le badge « ancienne version » : **Bibliothèque → R
 versions** (ou « Redisséquer » dans la fiche d'un site). Une petite fenêtre s'ouvre pour chaque site ; garde
 le tableau de bord visible. L'ADN déjà écrit par Claude (`DESIGN_DNA.md`, `dna.json`) est conservé.
 
+## Analyse ciblée d'une animation
+
+Pour comprendre **une** animation à fond (déjà disséquée ou non) :
+- Panneau DIP → **Analyser une animation précise** (onglet en cours), ou tableau de bord → **Effets →
+  Analyser une animation** (adresse), ou dans la fiche d'un site → **Analyser une animation**.
+- Dans la page : fais défiler jusqu'à l'animation, **Entourer**, dessine un cercle autour, **Analyser cette zone**.
+- DIP rejoue la zone sous tous les angles : rechargement (si elle est en haut de page), repos, défilement fin
+  aller-retour, survol et traversée, souris, appui long, clic (sans quitter la page), glisser. Il suit chaque
+  élément de la zone image par image, lit le CSS, les appels GSAP, les shaders, et prend des images de la zone.
+- Résultat dans la bibliothèque : `effects/<site>_<nom>_<date>/` → `EFFECT.md` (nom usuel, déclencheur,
+  durées, easings, valeurs), `frames/`, `curves/`, `code/`. Visible dans **Effets → Analyses ciblées**.
+- Puis dans Claude Code (bibliothèque) : **`/dip-effect effects/<dossier>`** — Claude identifie l'effet, cherche
+  sur le web (Codrops, GSAP, CodePen…), complète la fiche (recette au millimètre, code, variantes, pièges,
+  sources) et construit une **démo** (`demo/index.html`).
+- En ligne de commande : `node cli/dip-focus.js --url https://site.com --lib D:\DIP-Library`.
+
 ## Qualité : ne pas refaire les mêmes erreurs
 
 - **`dip-review`** contrôle un site construit, sans référence : zones vides, blocs à moitié vides, menu fixe
@@ -165,6 +181,7 @@ commandes Claude Code. Ouvre Claude Code dans ce dossier (abonnement Claude, pas
 | `/dip-create <brief>` | concept original + pack de production à partir de la bibliothèque |
 | `/dip-transform <pack client> <packs référence>` | transforme un site ordinaire en projet premium |
 | `/dip-clone <url>` | boucle complète : capture → ADN → construction → vérification (3 essais max / section) |
+| `/dip-effect effects/<dossier>` | complète la fiche d'une analyse ciblée : nom, recherches web, recette, démo |
 | `/dip-review sites/<projet>` | revue qualité du site construit, corrections, leçons pour les prochains projets |
 
 **Images et objets 3D originaux** (fal.ai, paiement à l'usage, sans abonnement ; clé dans une variable

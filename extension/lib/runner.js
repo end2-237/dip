@@ -2,6 +2,7 @@
 import { runScan } from './scan.js';
 import { CdpDriver } from './cdp-driver.js';
 import { StandardDriver } from './std-driver.js';
+import { runFocus } from './focus.js';
 
 async function probeSource() {
   return (await fetch(chrome.runtime.getURL('probes/probes.js'))).text();
@@ -95,4 +96,54 @@ export async function shareImage(bytes) {
   g.fillStyle = 'rgba(255,255,255,.55)';
   g.fillText('DIP · share · reference only', 12, h - 12);
   return new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer());
+}
+
+// Focus analysis of one zone on a tab (Deep mode): reload with the probes armed, let the user circle the zone,
+// replay it. Resolves null when the user cancels.
+export async function focusTab(tab, onProgress) {
+  const target = { tabId: tab.id };
+  await chrome.debugger.attach(target, '1.3');
+  const driver = new CdpDriver((method, params) => chrome.debugger.sendCommand(target, method, params || {}));
+  try {
+    await driver.init(await probeSource());
+    await driver.reload();
+    await new Promise((r) => setTimeout(r, 1500));
+    await driver.call('waitStable', 600, 8000).catch(() => {});
+    onProgress && onProgress({ pct: 0, label: 'en attente de la zone' });
+    return await runFocus(driver, { onProgress });
+  } finally {
+    await driver.dispose().catch(() => {});
+    await chrome.debugger.detach(target).catch(() => {});
+  }
+}
+
+// Same, on a URL opened in a window on the right of the current one (the dashboard stays visible on the left).
+export async function focusUrl(url, onProgress) {
+  let win;
+  try {
+    const cur = await chrome.windows.getCurrent();
+    const w = Math.max(900, Math.round(cur.width * 0.64));
+    win = await chrome.windows.create({ url, type: 'normal', width: w, height: cur.height, left: cur.left + cur.width - w, top: cur.top, focused: true });
+  } catch (e) {
+    win = await chrome.windows.create({ url, type: 'normal', focused: true });
+  }
+  const tabId = win.tabs[0].id;
+  try {
+    await new Promise((resolve) => {
+      const done = (id, info) => {
+        if (id === tabId && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(done);
+          resolve();
+        }
+      };
+      chrome.tabs.onUpdated.addListener(done);
+      setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(done);
+        resolve();
+      }, 30000);
+    });
+    return await focusTab(await chrome.tabs.get(tabId), onProgress);
+  } finally {
+    await chrome.windows.remove(win.id).catch(() => {});
+  }
 }

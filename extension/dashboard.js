@@ -1,9 +1,10 @@
 // DIP Studio — full-page dashboard: library folder, scans, measured animations, suggestions, creation commands.
-import { getRoot, pickRoot, access, fsAdapter, readBlob, savePack, removePack, writeFile } from './lib/workspace.js';
-import { listPacks, writeIndex, effectsByType, rankReferences, librarySuggestions, libraryStats, words, versionLess, libraryPatterns } from './lib/library.js';
+import { getRoot, pickRoot, access, fsAdapter, readBlob, savePack, removePack, writeFile, saveFocus } from './lib/workspace.js';
+import { listFocus, listPacks, writeIndex, effectsByType, rankReferences, librarySuggestions, libraryStats, words, versionLess, libraryPatterns } from './lib/library.js';
 import { ANALYZER_VERSION } from './lib/analyzer.js';
 import { buildPackFiles, packName } from './lib/pack.js';
-import { dissectUrl, shareImage } from './lib/runner.js';
+import { dissectUrl, shareImage, focusUrl } from './lib/runner.js';
+import { analyzeFocus, focusFiles } from './lib/focus.js';
 import { stepLabel } from './lib/i18n.js';
 import { readPackZip } from './lib/unzip-web.js';
 import { EFFECT_TYPES } from './lib/taxonomy.js';
@@ -27,7 +28,7 @@ const TYPE_FR = {
 const typeFr = (t) => TYPE_FR[t] || t;
 const TRIGGERS = { load: 'au chargement', 'scroll-enter': 'à l’entrée au scroll', 'scroll-scrub': 'lié au scroll', hover: 'au survol', press: 'appui long', 'mouse-move': 'à la souris', click: 'au clic', drag: 'glisser', 'time-loop': 'en boucle', 'route-change': 'changement de page' };
 
-const state = { root: null, access: 'none', packs: [], sites: [], page: 'overview', libFilter: 'all', moTrigger: 'all', moType: 'all', mode: 'create', refs: new Set(), refsTouched: false, windowId: null };
+const state = { root: null, access: 'none', packs: [], sites: [], focus: [], page: 'overview', libFilter: 'all', moTrigger: 'all', moType: 'all', mode: 'create', refs: new Set(), refsTouched: false, windowId: null };
 const thumbCache = new Map();
 
 // ------------------------------------------------------------------ helpers
@@ -160,6 +161,7 @@ async function loadWorkspace(interactive) {
 async function refresh() {
   state.packs = ready() ? await listPacks(fsAdapter(state.root)).catch(() => []) : [];
   state.sites = ready() ? await listSites().catch(() => []) : [];
+  state.focus = ready() ? await listFocus(fsAdapter(state.root)).catch(() => []) : [];
   $('#nav-sites').textContent = state.sites.length || '';
   $('#nav-count').textContent = state.packs.length || '';
   render();
@@ -272,7 +274,105 @@ async function curveSvg(p, id) {
     return '';
   }
 }
+const FRAME_LABEL = { '00': 'zone', '10': 'au repos', '20': 'défilement', '30': 'survol', '40': 'souris', '50': 'appui', '60': 'clic', '70': 'glisser' };
+function renderFocusGrid() {
+  const grid = $('#focus-grid');
+  grid.innerHTML = '';
+  if (!state.focus.length) {
+    grid.innerHTML = '<div class="empty-note">Aucune analyse ciblée pour l’instant.</div>';
+    return;
+  }
+  for (const f of state.focus) {
+    const el = document.createElement('article');
+    el.className = 'fx';
+    el.innerHTML = `<div class="fx-prev"><img alt=""><span class="badge ${f.completed ? 'ok' : 'warn'}">${f.completed ? 'fiche complète' : 'à compléter'}</span></div>
+      <div class="fx-b"><b>${esc(f.commonName ? f.commonName.fr : f.type)}</b><span>${esc(f.host)} · ${esc(TRIGGERS[f.trigger] || f.trigger || '—')}</span><span class="mono">${esc(f.type)}</span></div>`;
+    lazyImg($('img', el), (async () => {
+      const b = await readBlob(state.root, `${f.path}/${(f.frames || []).find((x) => /20-scroll|30-hover|10-idle-3/.test(x)) || (f.frames || [])[0] || 'frames/00-selected.png'}`);
+      return b ? URL.createObjectURL(b) : null;
+    })());
+    el.onclick = () => openFocus(f);
+    grid.appendChild(el);
+  }
+}
+async function openFocus(f) {
+  const text = await fsAdapter(state.root).readText(`${f.path}/EFFECT.md`);
+  const cmd = `/dip-effect ${f.path}`;
+  drawer(
+    `${esc(f.commonName ? f.commonName.fr : f.type)} <span class="badge ${f.completed ? 'ok' : 'warn'}" style="margin-left:8px">${f.completed ? 'fiche complète' : 'à compléter'}</span>`,
+    `<div class="muted small">${esc(f.host)} · ${fmtDate(f.date)} · ${esc(f.commonName ? f.commonName.en : '')}</div>
+    <div class="dr-actions"><button class="primary" id="fx-copy">Copier ${esc(cmd)}</button>${f.demo ? '<button id="fx-demo">Ouvrir la démo</button>' : ''}<button class="ghost" id="fx-site">Ouvrir le site</button><button class="ghost" id="fx-again">Refaire l’analyse</button></div>
+    <div class="frames">${(f.frames || []).map((fr) => `<figure><img data-fr="${esc(fr)}" alt=""><figcaption>${esc(FRAME_LABEL[fr.split('/').pop().slice(0, 2)] || '')} · ${esc(fr.split('/').pop().replace('.png', ''))}</figcaption></figure>`).join('')}</div>
+    <div class="md">${text ? renderMd(text) : '<p class="muted">EFFECT.md introuvable.</p>'}</div>`
+  );
+  $$('[data-fr]').forEach((img) => lazyImg(img, (async () => {
+    const b = await readBlob(state.root, `${f.path}/${img.dataset.fr}`);
+    return b ? URL.createObjectURL(b) : null;
+  })()));
+  $('#fx-copy').onclick = () => copy(cmd);
+  $('#fx-site').onclick = () => chrome.tabs.create({ url: f.url });
+  $('#fx-again').onclick = () => {
+    closeDrawer();
+    runFocusJob(f.url);
+  };
+  if ($('#fx-demo')) $('#fx-demo').onclick = async () => {
+    const b = await readBlob(state.root, `${f.path}/${f.demo}`);
+    if (b) chrome.tabs.create({ url: URL.createObjectURL(new Blob([await b.text()], { type: 'text/html' })) });
+  };
+}
+let focusBusy = false;
+async function runFocusJob(url) {
+  if (focusBusy || reBusy) return toast('Une analyse est déjà en cours');
+  if (!ready()) return toast('Autorise d’abord l’accès au dossier');
+  focusBusy = true;
+  const job = $('#job');
+  job.hidden = false;
+  let host = url;
+  try {
+    host = new URL(url).hostname;
+  } catch (e) {
+    /* keep url */
+  }
+  $('#job-title').textContent = `Analyse ciblée · ${host} — entoure l’animation dans la fenêtre du site`;
+  $('#job-pct').textContent = '';
+  $('#job-bar').style.width = '0%';
+  $('#job-step').textContent = 'En attente de ta sélection…';
+  try {
+    const fc = await focusUrl(url, (x) => {
+      $('#job-pct').textContent = x.pct + '%';
+      $('#job-bar').style.width = x.pct + '%';
+      $('#job-step').textContent = x.label;
+    });
+    if (!fc) return toast('Analyse annulée');
+    $('#job-step').textContent = 'Enregistrement…';
+    const fa = analyzeFocus(fc);
+    const { slug, files, json } = focusFiles(fc, fa);
+    await saveFocus(state.root, slug, files);
+    await refresh();
+    location.hash = 'motion';
+    toast(`${json.commonName.fr} : fiche créée`);
+    const f = state.focus.find((x) => x.slug === slug);
+    if (f) openFocus(f);
+  } catch (e) {
+    console.error(e);
+    toast(String(e.message || e));
+  } finally {
+    focusBusy = false;
+    job.hidden = true;
+  }
+}
+$('#btn-focus-new').onclick = () => $('#dlg-focus').showModal();
+$('#focus-go').onclick = (e) => {
+  e.preventDefault();
+  let url = $('#focus-url').value.trim();
+  if (url && !/^https?:\/\//.test(url)) url = 'https://' + url;
+  if (!/^https?:\/\/[^.]+\..+|^https?:\/\/(localhost|127\.0\.0\.1)/.test(url)) return toast('Adresse invalide');
+  $('#dlg-focus').close();
+  runFocusJob(url);
+};
+
 function renderMotion() {
+  renderFocusGrid();
   const q = $('#search').value.toLowerCase();
   const groups = effectsByType(state.packs);
   const trig = new Set(state.packs.flatMap((p) => p.effects.map((e) => e.trigger)));
@@ -421,6 +521,7 @@ function openPack(p) {
       <button class="primary" id="dr-use">Utiliser comme référence</button>
       ${p.hasDna ? '' : `<button id="dr-dna">Copier /dip-dna</button>`}
       <button id="dr-re">${isOld(p) ? 'Redisséquer (nouvelle version)' : 'Redisséquer'}</button>
+      <button id="dr-focus">Analyser une animation</button>
       <button class="ghost" id="dr-open">Ouvrir le site</button>
       <button class="ghost" id="dr-del">Supprimer</button>
     </div>
@@ -440,6 +541,10 @@ function openPack(p) {
   };
   if ($('#dr-dna')) $('#dr-dna').onclick = () => copy('/dip-dna ' + p.path);
   $('#dr-open').onclick = () => chrome.tabs.create({ url: p.url });
+  $('#dr-focus').onclick = () => {
+    closeDrawer();
+    runFocusJob(p.url);
+  };
   $('#dr-re').onclick = () => {
     closeDrawer();
     redissect([p]);

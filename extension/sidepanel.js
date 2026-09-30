@@ -1,8 +1,9 @@
 // DIP side panel: UI + scan orchestration (the panel stays alive while open, unlike the MV3 service worker).
 import { bytesToB64 } from './lib/std-driver.js';
-import { dissectTab, shareImage } from './lib/runner.js';
+import { dissectTab, shareImage, focusTab } from './lib/runner.js';
+import { analyzeFocus, focusFiles } from './lib/focus.js';
 import { buildPackZip, buildPackFiles, packName } from './lib/pack.js';
-import { getRoot, access, savePack } from './lib/workspace.js';
+import { getRoot, access, savePack, saveFocus } from './lib/workspace.js';
 import { synthesize } from './lib/llm.js';
 import { saveScan, loadScan } from './lib/store.js';
 import { t as tr, stepLabel } from './lib/i18n.js';
@@ -73,6 +74,7 @@ function setBusy(b) {
   busy = b;
   $('#btn-dissect').disabled = b;
   $('#btn-record').disabled = b;
+  $('#btn-focus').disabled = b;
   $('#progress').hidden = !b;
 }
 function onProgress(p) {
@@ -274,11 +276,48 @@ async function saveToLibrary(root, auto) {
   }
 }
 
+// ------------------------------------------------------------------ focus analysis (one animation)
+async function startFocus() {
+  if (busy) return;
+  const tab = await activeTab();
+  if (!tab || !/^https?:/.test(tab.url || '')) {
+    message(t('notHttp'), 'error');
+    return;
+  }
+  const root = await getRoot().catch(() => null);
+  const rootOk = root ? (await access(root, true).catch(() => 'denied')) === 'granted' : false;
+  if (!rootOk) {
+    message(root ? t('workspaceLocked') : t('noWorkspace'), 'error');
+    return;
+  }
+  setBusy(true);
+  $('#progress-title').textContent = t('focus');
+  $('#btn-stop').hidden = true;
+  message(t('focusWait'), 'ok');
+  try {
+    const fc = await focusTab(tab, onProgress);
+    if (!fc) {
+      message(t('focusCancelled'));
+      return;
+    }
+    const fa = analyzeFocus(fc);
+    const { slug, files, json } = focusFiles(fc, fa);
+    const dir = await saveFocus(root, slug, files);
+    message(`${t('focusSaved')} : ${json.commonName.fr} (${fa.effects.length}) → ${root.name}/${dir} — Claude Code : /dip-effect ${dir}`, 'ok');
+  } catch (e) {
+    console.error(e);
+    message(t('failed') + ' : ' + (e.message || e), 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
 // ------------------------------------------------------------------ wiring
 $('#btn-save-lib').addEventListener('click', () => saveToLibrary(null, false));
 $('#btn-dashboard').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') }));
 $('#btn-dissect').addEventListener('click', () => start(false));
 $('#btn-record').addEventListener('click', () => start(true));
+$('#btn-focus').addEventListener('click', () => startFocus());
 $('#btn-stop').addEventListener('click', () => stopResolver && stopResolver());
 $('#btn-export').addEventListener('click', () => exportPack(false));
 $('#btn-export-sel').addEventListener('click', () => exportPack(true));

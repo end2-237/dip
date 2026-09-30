@@ -85,6 +85,17 @@ export async function listPacks(fsa) {
   return packs.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
+// Focus analyses (effects/<slug>/effect.json), written by the extension or cli/dip-focus.js
+export async function listFocus(fsa) {
+  const dirs = (await fsa.list('effects').catch(() => [])).filter((d) => d.kind === 'directory');
+  const out = [];
+  for (const d of dirs) {
+    const j = await readJson(fsa, `effects/${d.name}/effect.json`);
+    if (j && j.kind === 'dip-focus') out.push({ ...j, slug: d.name, path: 'effects/' + d.name });
+  }
+  return out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
 export function libraryMd(packs) {
   const o = ['# DIP library', '', `${packs.length} site(s). Open Claude Code in this folder and use \`/dip-create <brief>\`, \`/dip-transform <client pack> <reference packs>\`, \`/dip-clone <url>\` or \`/dip-dna <pack folders>\`.`, ''];
   const noDna = packs.filter((p) => !p.hasDna);
@@ -124,7 +135,8 @@ export async function writeIndex(fsa) {
   const slim = packs.map(({ effects, ...p }) => ({ ...p, effects: effects.map(({ preview, curve, ...e }) => e) }));
   await fsa.writeText('index.json', JSON.stringify({ generator: 'DIP library', updated: new Date().toISOString(), packs: slim }, null, 2));
   await fsa.writeText('LIBRARY.md', libraryMd(packs));
-  await fsa.writeText('EFFECTS.md', effectsMd(packs));
+  const focus = await listFocus(fsa);
+  await fsa.writeText('EFFECTS.md', effectsMd(packs) + (focus.length ? '\n## Focused analyses (effects/)\n\n' + focus.map((f) => `- [${f.commonName ? f.commonName.fr : f.type}](${f.path}/EFFECT.md) — ${f.host}, ${f.type} / ${f.trigger || '?'}${f.completed ? ' · fiche complète' : ' · à compléter : \`/dip-effect ' + f.path + '\`'}`).join('\n') + '\n' : ''));
   const pt = libraryPatterns(packs);
   await fsa.writeText('patterns.json', JSON.stringify(pt, null, 2));
   await fsa.writeText('PATTERNS.md', patternsMd(pt));
