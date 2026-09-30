@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "DIP — Design Intelligence Pipeline",
   "short_name": "DIP",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Dissect creative websites (GSAP, Lenis, WebGL…) into a Reproduction Pack that a coding agent can rebuild with measurable fidelity.",
   "permissions": [
     "sidePanel",

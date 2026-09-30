@@ -7,7 +7,7 @@ import { geometryToGlb } from './glb.js';
 import { sectionFor } from './analyzer.js';
 
 export const SCHEMA_VERSION = 1;
-export const DIP_VERSION = '0.2.0';
+export const DIP_VERSION = '0.3.0';
 
 const J = (o) => JSON.stringify(o, null, 2);
 const r2 = (x) => Math.round(x * 100) / 100;

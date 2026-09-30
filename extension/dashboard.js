@@ -882,6 +882,14 @@ document.addEventListener('visibilitychange', () => document.visibilityState ===
 
 (async function init() {
   try {
+    const v = 'v' + chrome.runtime.getManifest().version;
+    $('#dip-version').textContent = v;
+    $('#set-version').textContent = v;
+  } catch (e) {
+    /* tests outside the extension */
+  }
+  $('#set-analyzer').textContent = ANALYZER_VERSION;
+  try {
     state.windowId = (await chrome.windows.getCurrent()).id;
   } catch (e) {
     /* not in an extension page (tests) */

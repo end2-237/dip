@@ -224,7 +224,7 @@ sur mesure exportées en `.glb` d'étude dans `webgl/geometry/`).
 ```bash
 npm test                         # tests unitaires + scan des fixtures (Playwright)
 npm run serve:fixtures           # sert fixtures/ sur http://127.0.0.1:5555
-npm run package:extension        # crée dist/dip-extension-0.2.0.zip (partage / Chrome Web Store)
+npm run package:extension        # crée dist/dip-extension-0.3.0.zip (partage / Chrome Web Store)
 ```
 
 - `extension/probes/probes.js` : sondes injectées dans la page (MAIN world, `document_start`).
