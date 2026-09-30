@@ -25,8 +25,15 @@ DIP comporte trois éléments, chacun dans son propre dossier :
 4. Clique l'icône DIP → bouton ▦ → le **tableau de bord** s'ouvre. Choisis le dossier de ta bibliothèque
    (un dossier vide, par exemple `D:\DIP-Library`, ou ta bibliothèque existante).
 
-> Tu avais DIP dans un autre dossier ? Supprime l'ancienne entrée dans `chrome://extensions` et charge
-> `D:\DIP\extension`. Resélectionne ta bibliothèque dans le tableau de bord : tous tes scans y sont toujours.
+> **DIP est déjà installé ailleurs (par exemple `D:\Projets\dip`) ?** Ne déplace rien : mets-le à jour sur place.
+> ```powershell
+> $env:DIP_HOME = "D:\Projets\dip"   # le dossier qui contient extension\
+> irm https://raw.githubusercontent.com/end2-237/dip/main/scripts/update-dip.ps1 | iex
+> ```
+> Puis clique ↻ sur DIP dans `chrome://extensions`. L'extension garde son identité : dossier de bibliothèque,
+> réglages et clé restent en place. Le dossier est mémorisé pour les mises à jour suivantes.
+> Tes dissections sont dans ta **bibliothèque** (le dossier choisi dans le tableau de bord), pas dans le dossier de
+> DIP : aucune mise à jour ne les touche.
 
 ## 2. Mettre à jour
 
